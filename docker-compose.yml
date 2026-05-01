@@ -1,0 +1,22 @@
+services:
+  app:
+    build: .
+    container_name: kvm-mgr-app
+    volumes:
+      - ./:/app:rw
+    ports:
+      - "8000:8000"
+    environment:
+      - DEFAULT_HOST_URI=qemu:///system
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  tests:
+    build: .
+    container_name: kvm-mgr-tests
+    volumes:
+      - ./:/app:rw
+    depends_on:
+      - app
+    environment:
+      - DEFAULT_HOST_URI=qemu:///system
+    entrypoint: ["pytest", "-q"]

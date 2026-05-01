@@ -1,0 +1,6 @@
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+pydantic>=1.10
+# libvirt-python omitted for local tests; use system libvirt in production
+pytest>=7.0
+httpx>=0.24
