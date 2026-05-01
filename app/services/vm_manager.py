@@ -91,6 +91,51 @@ def get_vm_status(name: str, host_uri: str = None) -> str:
         libvirt_driver.close(conn)
 
 
+def get_vm_info(name: str, host_uri: str = None) -> dict | None:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        try:
+            dom = conn.lookupByName(name)
+        except Exception:
+            return None
+        active = dom.isActive()
+        return {"name": name, "state": "running" if active == 1 else "stopped"}
+    finally:
+        libvirt_driver.close(conn)
+
+
+def list_vms(host_uri: str = None) -> list:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        # prefer listAllDomains for richer info; tests may mock this
+        try:
+            domains = conn.listAllDomains()
+        except Exception:
+            # fallback to defined domains if listAllDomains not available
+            names = (
+                conn.listDefinedDomains() if hasattr(conn, "listDefinedDomains") else []
+            )
+            return [{"name": n, "state": "unknown"} for n in names]
+
+        result = []
+        for d in domains:
+            try:
+                name = d.name()
+            except Exception:
+                name = "unknown"
+            try:
+                active = d.isActive()
+                state = "running" if active == 1 else "stopped"
+            except Exception:
+                state = "unknown"
+            result.append({"name": name, "state": state})
+        return result
+    finally:
+        libvirt_driver.close(conn)
+
+
 def _render_domain_xml(spec: VMSpec) -> str:
     # minimal libvirt domain XML for qemu
     xml = f"""
