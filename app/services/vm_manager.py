@@ -58,6 +58,8 @@ def create_vm(req: VMCreateRequest) -> dict:
         raise ServiceError(f"storage error: {e}", code="STORAGE_ERROR", http_status=500)
 
     conn = None
+    defined = False
+    started = False
     try:
         conn = libvirt_driver.connect(host)
 
@@ -68,7 +70,10 @@ def create_vm(req: VMCreateRequest) -> dict:
         logger.info("Creating VM '%s' on host %s", spec.name, host)
 
         domain = libvirt_driver.define_vm(conn, xml)
+        defined = True
+
         libvirt_driver.start_vm(conn, domain)
+        started = True
         logger.info("VM '%s' created and started", spec.name)
 
         ip = network.get_vm_ip(conn, spec.name)
@@ -83,13 +88,27 @@ def create_vm(req: VMCreateRequest) -> dict:
             result["root_password"] = root_password
         return result
     except Exception:
+        logger.exception("create_vm failed, rolling back")
+        if started:
+            try:
+                libvirt_driver.destroy_vm(conn, spec.name)
+            except Exception as e:
+                logger.warning("rollback: destroy failed: %s", e)
+        if defined:
+            try:
+                libvirt_driver.undefine_vm(conn, spec.name, remove_storage=False)
+            except Exception as e:
+                logger.warning("rollback: undefine failed: %s", e)
         if disk_path:
-            storage.remove_disk(disk_path)
+            try:
+                storage.remove_disk(disk_path)
+            except Exception as e:
+                logger.warning("rollback: remove disk failed: %s", e)
         if cloud_init_iso_path:
             try:
                 cloud_init.cleanup_cloudinit_iso(spec.name)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("rollback: cleanup ISO failed: %s", e)
         raise
     finally:
         if conn is not None:
@@ -316,12 +335,17 @@ def resize_vm(req) -> dict:
 def attach_disk(name: str, size_gb: int, target_dev: str = "vdb", host_uri: str = None) -> dict:
     host = host_uri or settings.default_host_uri
     conn = libvirt_driver.connect(host)
+    disk_path = None
     try:
         images_dir = Path(settings.storage_pool)
         images_dir.mkdir(parents=True, exist_ok=True)
         disk_path = str(images_dir / f"{name}_{target_dev}.qcow2")
         libvirt_driver.create_disk(disk_path, size_gb)
-        libvirt_driver.attach_disk(conn, name, disk_path, target_dev)
+        try:
+            libvirt_driver.attach_disk(conn, name, disk_path, target_dev)
+        except Exception:
+            storage.remove_disk(disk_path)
+            raise
         return {"name": name, "disk_path": disk_path, "target_dev": target_dev}
     finally:
         if conn is not None:
@@ -415,21 +439,40 @@ def import_vm(xml: str, disk_paths: list[str] = None, host_uri: str = None) -> d
 def clone_vm(name: str, new_name: str, host_uri: str = None) -> dict:
     host = host_uri or settings.default_host_uri
     conn = libvirt_driver.connect(host)
+    dst_disk = None
+    defined = False
     try:
         xml = libvirt_driver.get_domain_xml(conn, name)
         new_xml = libvirt_driver.rename_in_xml(xml, new_name)
 
         src_disk = _get_disk_path(conn, name)
-        dst_disk = None
         if src_disk:
             dst_disk = str(Path(src_disk).parent / f"{new_name}.qcow2")
             libvirt_driver.copy_disk_image(src_disk, dst_disk)
             new_xml = new_xml.replace(src_disk, dst_disk)
 
         libvirt_driver.define_vm(conn, new_xml)
+        defined = True
         libvirt_driver.start_vm(conn, new_name)
         ip = network.get_vm_ip(conn, new_name)
         return {"name": new_name, "ip_address": ip, "disk": dst_disk}
+    except Exception:
+        logger.exception("clone_vm failed, rolling back")
+        if defined:
+            try:
+                libvirt_driver.destroy_vm(conn, new_name)
+            except Exception:
+                pass
+            try:
+                libvirt_driver.undefine_vm(conn, new_name, remove_storage=False)
+            except Exception:
+                pass
+        if dst_disk:
+            try:
+                Path(dst_disk).unlink(missing_ok=True)
+            except Exception:
+                pass
+        raise
     finally:
         if conn is not None:
             libvirt_driver.close(conn)
