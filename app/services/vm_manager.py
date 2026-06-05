@@ -2,9 +2,10 @@ import logging
 import html
 import secrets
 import string
+from pathlib import Path
 from typing import Optional
 
-from app.api.schemas import VMCreateRequest, VMActionRequest, VMISORequest
+from app.api.schemas import VMCreateRequest, VMActionRequest, VMISORequest, VMResizeRequest
 from app.infrastructure import libvirt_driver, storage, network
 from app.errors import ServiceError
 from app.models.vm_spec import VMSpec
@@ -197,10 +198,247 @@ def get_vm_info(name: str, host_uri: str = None) -> Optional[dict]:
             m = re.search(r"<memory unit='MiB'>(\d+)</memory>", xml)
             if m:
                 info["memory_mb"] = int(m.group(1))
+            else:
+                m = re.search(r"<memory unit='KiB'>(\d+)</memory>", xml)
+                if m:
+                    info["memory_mb"] = int(m.group(1)) // 1024
             m = re.search(r"<vcpu(?: placement='static')?>(\d+)</vcpu>", xml)
             if m:
                 info["cpu"] = int(m.group(1))
         return info
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
+def _get_disk_target(conn, name: str) -> Optional[str]:
+    """Find the first disk device target (e.g. 'vda') from domain XML."""
+    try:
+        xml = libvirt_driver.get_domain_xml(conn, name)
+        if not xml:
+            return None
+        import re
+        m = re.search(
+            r"<disk type='file' device='disk'>.*?<target dev='([^']+)'",
+            xml, re.DOTALL,
+        )
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
+def _get_disk_path(conn, name: str) -> Optional[str]:
+    """Find the first disk source file path from domain XML."""
+    try:
+        xml = libvirt_driver.get_domain_xml(conn, name)
+        if not xml:
+            return None
+        import re
+        m = re.search(
+            r"<disk type='file' device='disk'>.*?<source file='([^']+)'",
+            xml, re.DOTALL,
+        )
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
+def resize_vm(req) -> dict:
+    host = req.host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        dom = conn.lookupByName(req.name)
+        was_active = dom.isActive() == 1
+        should_restart = was_active
+        changes = {}
+
+        if req.cpu is not None or req.memory_mb is not None:
+            if was_active:
+                try:
+                    if req.cpu is not None:
+                        libvirt_driver.set_vcpus(conn, req.name, req.cpu)
+                        changes["cpu"] = req.cpu
+                    if req.memory_mb is not None:
+                        libvirt_driver.set_memory(conn, req.name, req.memory_mb * 1024)
+                        changes["memory_mb"] = req.memory_mb
+                except Exception:
+                    libvirt_driver.destroy_vm(conn, req.name)
+                    should_restart = True
+
+            if req.cpu is not None and "cpu" not in changes:
+                xml = libvirt_driver.get_domain_xml(conn, req.name, 1)
+                import re
+                xml = re.sub(
+                    r"<vcpu[^>]*>.*?</vcpu>",
+                    f"<vcpu placement='static'>{req.cpu}</vcpu>",
+                    xml,
+                )
+                libvirt_driver.redefine_domain(conn, req.name, xml)
+                changes["cpu"] = req.cpu
+
+            if req.memory_mb is not None and "memory_mb" not in changes:
+                xml = libvirt_driver.get_domain_xml(conn, req.name, 1)
+                import re
+                xml = re.sub(
+                    r"<memory[^>]*>.*?</memory>",
+                    f"<memory unit='MiB'>{req.memory_mb}</memory>",
+                    xml,
+                )
+                xml = re.sub(
+                    r"<currentMemory[^>]*>.*?</currentMemory>",
+                    f"<currentMemory unit='MiB'>{req.memory_mb}</currentMemory>",
+                    xml,
+                )
+                libvirt_driver.redefine_domain(conn, req.name, xml)
+                changes["memory_mb"] = req.memory_mb
+
+            if should_restart:
+                libvirt_driver.start_vm(conn, req.name)
+
+        if req.disk_gb is not None:
+            disk_path = _get_disk_path(conn, req.name)
+            target = _get_disk_target(conn, req.name)
+            if disk_path and target:
+                import subprocess
+                subprocess.check_call(
+                    ["qemu-img", "resize", disk_path, f"{req.disk_gb}G"],
+                    stdout=subprocess.DEVNULL,
+                )
+                libvirt_driver.block_resize(conn, req.name, target, req.disk_gb * 1024**3 // 512)
+                changes["disk_gb"] = req.disk_gb
+
+        return changes
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
+def attach_disk(name: str, size_gb: int, target_dev: str = "vdb", host_uri: str = None) -> dict:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        images_dir = Path(settings.storage_pool)
+        images_dir.mkdir(parents=True, exist_ok=True)
+        disk_path = str(images_dir / f"{name}_{target_dev}.qcow2")
+        libvirt_driver.create_disk(disk_path, size_gb)
+        libvirt_driver.attach_disk(conn, name, disk_path, target_dev)
+        return {"name": name, "disk_path": disk_path, "target_dev": target_dev}
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
+def detach_disk_vm(name: str, target_dev: str, host_uri: str = None) -> dict:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        libvirt_driver.detach_disk(conn, name, target_dev)
+        return {"name": name, "target_dev": target_dev}
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
+def snapshot_create(name: str, snap_name: str, host_uri: str = None) -> dict:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        libvirt_driver.snapshot_create(conn, name, snap_name)
+        return {"name": name, "snapshot": snap_name}
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
+def snapshot_list(name: str, host_uri: str = None) -> list:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        return libvirt_driver.snapshot_list(conn, name)
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
+def snapshot_revert(name: str, snap_name: str, host_uri: str = None) -> dict:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        libvirt_driver.snapshot_revert(conn, name, snap_name)
+        return {"name": name, "snapshot": snap_name}
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
+def snapshot_delete(name: str, snap_name: str, host_uri: str = None) -> dict:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        libvirt_driver.snapshot_delete(conn, name, snap_name)
+        return {"name": name, "snapshot": snap_name}
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
+def export_vm(name: str, host_uri: str = None) -> dict:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        xml = libvirt_driver.get_domain_xml(conn, name)
+        disk_paths = [_get_disk_path(conn, name)] if _get_disk_path(conn, name) else []
+        return {
+            "name": name,
+            "xml": xml,
+            "disks": disk_paths,
+        }
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
+def import_vm(xml: str, disk_paths: list[str] = None, host_uri: str = None) -> dict:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        libvirt_driver.define_vm(conn, xml)
+        name_match = __import__("re").search(r"<name>([^<]+)</name>", xml)
+        vm_name = name_match.group(1) if name_match else "unknown"
+        logger.info("Imported VM '%s' from XML definition", vm_name)
+        return {"name": vm_name}
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
+def network_create(name: str, bridge: str, subnet: str, host_uri: str = None) -> dict:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        libvirt_driver.network_create_nat(conn, name, bridge, subnet)
+        return {"name": name, "bridge": bridge, "subnet": subnet}
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
+def network_list(host_uri: str = None) -> list:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        return libvirt_driver.network_list(conn)
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
+def network_delete(name: str, host_uri: str = None) -> dict:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        libvirt_driver.network_delete(conn, name)
+        return {"name": name}
     finally:
         if conn is not None:
             libvirt_driver.close(conn)
@@ -360,10 +598,13 @@ def _render_domain_xml(spec: VMSpec) -> str:
         os_section += "\n    <boot dev='cdrom'/>"
     os_section += "\n  </os>"
 
+    max_memory = max(memory * 2, 65536)  # allow double or 64GB max for hotplug
+    max_vcpus = max(vcpu * 4, 32)  # allow 4x or 32 max for hotplug
     xml = f"""<domain type='kvm'>
   <name>{escaped_name}</name>
   <memory unit='MiB'>{memory}</memory>
-  <vcpu>{vcpu}</vcpu>
+  <maxMemory unit='MiB'>{max_memory}</maxMemory>
+  <vcpu placement='static' current='{vcpu}'>{max_vcpus}</vcpu>
   {os_section}
   <features>
     <acpi/>

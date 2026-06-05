@@ -6,3 +6,4 @@ pydantic>=1.10
 pytest>=7.0
 httpx>=0.24
 python-multipart>=0.0.9
+pyjwt>=2.0.0

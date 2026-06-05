@@ -1,7 +1,16 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from app.api.schemas import VMCreateRequest, VMActionRequest, VMISORequest
+from app.api.schemas import (
+    VMCreateRequest,
+    VMActionRequest,
+    VMISORequest,
+    VMResizeRequest,
+    VMAttachDiskRequest,
+    VMDetachDiskRequest,
+    VMNetworkRequest,
+    VMImportRequest,
+)
 from app.services.vm_manager import (
     create_vm,
     start_vm,
@@ -15,6 +24,18 @@ from app.services.vm_manager import (
     attach_iso,
     detach_iso,
     get_vnc_info,
+    resize_vm,
+    attach_disk,
+    detach_disk_vm,
+    snapshot_create,
+    snapshot_list,
+    snapshot_revert,
+    snapshot_delete,
+    network_create,
+    network_list,
+    network_delete,
+    export_vm,
+    import_vm,
 )
 from app.errors import ServiceError
 from app.api.vnc import router as vnc_router
@@ -98,6 +119,78 @@ def api_attach_iso(req: VMISORequest):
 def api_detach_iso(req: VMActionRequest):
     detach_iso(req.name, req.host_uri)
     return {"status": "ok", "message": f"CDROM detached from '{req.name}'"}
+
+
+@router.post("/snapshot/create")
+def api_snapshot_create(name: str, snap_name: str, host_uri: str = None):
+    result = snapshot_create(name, snap_name, host_uri)
+    return {"status": "ok", "snapshot": result}
+
+
+@router.get("/snapshot/list/{name}")
+def api_snapshot_list(name: str, host_uri: str = None):
+    snaps = snapshot_list(name, host_uri)
+    return {"status": "ok", "snapshots": snaps}
+
+
+@router.post("/snapshot/revert")
+def api_snapshot_revert(name: str, snap_name: str, host_uri: str = None):
+    result = snapshot_revert(name, snap_name, host_uri)
+    return {"status": "ok", "snapshot": result}
+
+
+@router.delete("/snapshot/delete")
+def api_snapshot_delete(name: str, snap_name: str, host_uri: str = None):
+    result = snapshot_delete(name, snap_name, host_uri)
+    return {"status": "ok", "message": f"Snapshot '{snap_name}' deleted"}
+
+
+@router.post("/resize")
+def api_resize_vm(req: VMResizeRequest):
+    result = resize_vm(req)
+    return {"status": "ok", "vm": result}
+
+
+@router.post("/attach-disk")
+def api_attach_disk(req: VMAttachDiskRequest):
+    result = attach_disk(req.name, req.size_gb, req.target_dev, req.host_uri)
+    return {"status": "ok", "disk": result}
+
+
+@router.post("/detach-disk")
+def api_detach_disk(req: VMDetachDiskRequest):
+    result = detach_disk_vm(req.name, req.target_dev, req.host_uri)
+    return {"status": "ok", "disk": result}
+
+
+@router.get("/export/{name}")
+def api_export_vm(name: str, host_uri: str = None):
+    result = export_vm(name, host_uri)
+    return {"status": "ok", "export": result}
+
+
+@router.post("/import")
+def api_import_vm(req: VMImportRequest):
+    result = import_vm(req.xml, req.disk_paths, req.host_uri)
+    return {"status": "ok", "vm": result}
+
+
+@router.post("/network/create")
+def api_network_create(req: VMNetworkRequest):
+    result = network_create(req.name, req.bridge, req.subnet, req.host_uri)
+    return {"status": "ok", "network": result}
+
+
+@router.get("/network/list")
+def api_network_list(host_uri: str = None):
+    nets = network_list(host_uri)
+    return {"status": "ok", "networks": nets}
+
+
+@router.delete("/network/delete")
+def api_network_delete(name: str, host_uri: str = None):
+    result = network_delete(name, host_uri)
+    return {"status": "ok", "message": f"Network '{name}' deleted"}
 
 
 @router.get("/vnc/info/{name}")

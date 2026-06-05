@@ -531,3 +531,210 @@ def test_vnc_console_page(monkeypatch):
     assert resp.headers["content-type"] == "text/html; charset=utf-8"
     assert "VM Console" in resp.text
     assert "test-vm" in resp.text
+
+
+def test_resize_vm(monkeypatch):
+    mock_conn = MagicMock()
+    dom = MagicMock()
+    dom.isActive.return_value = 0  # stopped
+    mock_conn.lookupByName.return_value = dom
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.connect", lambda uri: mock_conn
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.get_domain_xml",
+        lambda conn, name, flags=0: (
+            "<domain><name>vm1</name><memory unit='MiB'>1024</memory>"
+            "<currentMemory unit='MiB'>1024</currentMemory><vcpu placement='static'>2</vcpu></domain>"
+        ),
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.redefine_domain",
+        lambda conn, name, xml: None,
+    )
+
+    resp = client.post(
+        "/vm/resize",
+        json={"name": "vm1", "cpu": 4, "memory_mb": 2048},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["vm"]["cpu"] == 4
+    assert body["vm"]["memory_mb"] == 2048
+
+
+def test_attach_disk(monkeypatch):
+    mock_conn = MagicMock()
+    dom = MagicMock()
+    mock_conn.lookupByName.return_value = dom
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.connect", lambda uri: mock_conn
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.create_disk",
+        lambda path, size_gb: None,
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.attach_disk",
+        lambda conn, name, path, target: None,
+    )
+
+    resp = client.post(
+        "/vm/attach-disk",
+        json={"name": "vm1", "size_gb": 10, "target_dev": "vdb"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["disk"]["target_dev"] == "vdb"
+
+
+def test_detach_disk(monkeypatch):
+    mock_conn = MagicMock()
+    dom = MagicMock()
+    mock_conn.lookupByName.return_value = dom
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.connect", lambda uri: mock_conn
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.detach_disk",
+        lambda conn, name, target: None,
+    )
+
+    resp = client.post(
+        "/vm/detach-disk",
+        json={"name": "vm1", "target_dev": "vdb"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["disk"]["target_dev"] == "vdb"
+
+
+def test_snapshot_create_list_revert_delete(monkeypatch):
+    mock_conn = MagicMock()
+    dom = MagicMock()
+    snap = MagicMock()
+    snap.getName.return_value = "snap1"
+    snap.getXMLDesc.return_value = "<domainsnapshot><name>snap1</name></domainsnapshot>"
+    dom.listAllSnapshots.return_value = [snap]
+    mock_conn.lookupByName.return_value = dom
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.connect", lambda uri: mock_conn
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.snapshot_create",
+        lambda conn, name, snap_name: None,
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.snapshot_revert",
+        lambda conn, name, snap_name: None,
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.snapshot_delete",
+        lambda conn, name, snap_name: None,
+    )
+
+    resp = client.post("/vm/snapshot/create?name=vm1&snap_name=snap1")
+    assert resp.status_code == 200
+
+    resp = client.get("/vm/snapshot/list/vm1")
+    assert resp.status_code == 200
+    assert len(resp.json()["snapshots"]) == 1
+    assert resp.json()["snapshots"][0]["name"] == "snap1"
+
+
+def test_network_create_list_delete(monkeypatch):
+    mock_conn = MagicMock()
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.connect", lambda uri: mock_conn
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.network_create_nat",
+        lambda conn, name, bridge, subnet: None,
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.network_list",
+        lambda conn: [{"name": "test-net", "active": True, "bridge": "virbr1", "subnet": "192.168.123.0/24"}],
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.network_delete",
+        lambda conn, name: None,
+    )
+
+    resp = client.post(
+        "/vm/network/create",
+        json={"name": "test-net", "bridge": "virbr1", "subnet": "192.168.123.0/24"},
+    )
+    assert resp.status_code == 200
+
+    resp = client.get("/vm/network/list")
+    assert resp.status_code == 200
+    nets = resp.json()["networks"]
+    assert any(n["name"] == "test-net" for n in nets)
+
+
+def test_auth_login():
+    resp = client.post(
+        "/auth/login",
+        json={"username": "admin", "password": "admin"},
+    )
+    assert resp.status_code == 200
+    assert "access_token" in resp.json()
+
+
+def test_auth_login_wrong():
+    resp = client.post(
+        "/auth/login",
+        json={"username": "admin", "password": "wrong"},
+    )
+    assert resp.status_code == 401
+
+
+def test_auth_secured_endpoint():
+    resp = client.post(
+        "/auth/login",
+        json={"username": "admin", "password": "admin"},
+    )
+    token = resp.json()["access_token"]
+
+    resp = client.get(
+        "/health/secured", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["user"] == "admin"
+
+    resp = client.get("/health/secured")
+    assert resp.status_code == 401
+
+
+def test_export_vm(monkeypatch):
+    mock_conn = MagicMock()
+    dom = MagicMock()
+    mock_conn.lookupByName.return_value = dom
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.connect", lambda uri: mock_conn
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.get_domain_xml",
+        lambda conn, name, flags=0: "<domain><name>vm1</name></domain>",
+    )
+
+    resp = client.get("/vm/export/vm1")
+    assert resp.status_code == 200
+    assert resp.json()["export"]["name"] == "vm1"
+    assert "<name>vm1</name>" in resp.json()["export"]["xml"]
+
+
+def test_import_vm(monkeypatch):
+    mock_conn = MagicMock()
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.connect", lambda uri: mock_conn
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.define_vm",
+        lambda conn, xml: None,
+    )
+
+    resp = client.post(
+        "/vm/import",
+        json={"xml": "<domain><name>imported-vm</name></domain>"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["vm"]["name"] == "imported-vm"
