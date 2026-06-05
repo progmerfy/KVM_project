@@ -12,6 +12,7 @@ from app.database import (
     get_user_by_login,
     create_user,
     list_users,
+    update_password,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,11 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=8, max_length=128)
     email: str = Field(None, max_length=128)
     is_admin: bool = False
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(...)
+    new_password: str = Field(..., min_length=8, max_length=128)
 
 
 @router.get("/login-page", response_class=HTMLResponse)
@@ -110,6 +116,19 @@ def me(current_user: dict = Depends(get_current_user)):
             "is_admin": bool(current_user["is_admin"]),
         },
     }
+
+
+@router.post("/change-password")
+def change_password(req: ChangePasswordRequest, current_user: dict = Depends(get_current_user)):
+    user = get_user_by_login(current_user["username"])
+    if not user or not verify_password(req.current_password, user["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+    update_password(current_user["id"], req.new_password)
+    logger.info("Password changed for user '%s'", current_user["username"])
+    return {"status": "ok"}
 
 
 _LOGIN_PAGE_HTML = """<!DOCTYPE html>

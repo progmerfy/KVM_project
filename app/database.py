@@ -176,3 +176,13 @@ def delete_vm_ownership(vm_name: str) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def update_password(user_id: int, new_password: str) -> None:
+    conn = _get_conn()
+    try:
+        pw = hash_password(new_password)
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (pw, user_id))
+        conn.commit()
+    finally:
+        conn.close()

@@ -356,7 +356,7 @@ _APP_HTML = """<!DOCTYPE html>
         <a href="#" onclick="return showUploadIsoDialog()">Upload ISO</a>
         <a href="#" onclick="return showDownloadIsoDialog()">Download from URL</a>
       </div>
-      <a href="#" onclick="return showToast('Coming soon')">
+      <a href="#" onclick="return loadSettings(event)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         Settings
       </a>
@@ -1036,6 +1036,76 @@ function createVM(e) {
     loadVMs();
   }).catch(() => showToast('Error'));
   return false;
+}
+
+function loadSettings(e) {
+  if (e) e.preventDefault();
+  setBreadcrumbs('Settings');
+  const main = document.getElementById('main-content');
+  api('/auth/me').then(d => {
+    const user = d.user || {};
+    const isAdmin = user.is_admin;
+    let adminSection = '';
+    if (isAdmin) {
+      api('/auth/users').then(ud => {
+        const users = ud.users || [];
+        const list = document.getElementById('user-list');
+        if (list) list.innerHTML = users.map(u => `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px">
+            <div><span style="font-weight:500">${u.username}</span> ${u.is_admin ? '<span style="font-size:11px;color:var(--accent);margin-left:6px">admin</span>' : ''}<div style="font-size:12px;color:var(--text2)">${u.email || ''}</div></div>
+            <span style="font-size:12px;color:var(--text2)">${u.created_at || ''}</span>
+          </div>`).join('');
+      }).catch(() => {});
+      adminSection = `<div class="detail-section" style="margin-top:24px">
+        <h3>Users</h3>
+        <div id="user-list"><div style="text-align:center;padding:12px"><div class="spinner"></div></div></div>
+      </div>`;
+    }
+    main.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h1>Settings</h1>
+      </div>
+      <p class="sub">${user.email || user.username}</p>
+
+      <div class="detail-grid">
+        <div class="detail-section">
+          <h3>Change Password</h3>
+          <form onsubmit="changePassword(event)" style="margin-top:8px">
+            <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">Current Password</label>
+            <input type="password" id="cp-current" required style="width:100%;padding:10px 12px;margin-bottom:12px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
+            <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">New Password</label>
+            <input type="password" id="cp-new" required minlength="8" style="width:100%;padding:10px 12px;margin-bottom:12px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
+            <button type="submit" class="btn btn-primary" style="padding:10px 20px">Update Password</button>
+          </form>
+          <div id="cp-msg" style="font-size:13px;margin-top:8px;display:none"></div>
+        </div>
+        <div class="detail-section">
+          <h3>Server Info</h3>
+          <div class="row"><span class="label">Host</span><span class="value">${window.location.hostname}</span></div>
+          <div class="row"><span class="label">API Version</span><span class="value">0.5.0</span></div>
+          <div class="row"><span class="label">User</span><span class="value">${user.username}</span></div>
+          <div class="row"><span class="label">Role</span><span class="value">${isAdmin ? 'Admin' : 'User'}</span></div>
+        </div>
+      </div>
+      ${adminSection}`;
+  }).catch(() => { main.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load</div>'; });
+  return false;
+}
+
+function changePassword(e) {
+  e.preventDefault();
+  const current = document.getElementById('cp-current').value;
+  const newPass = document.getElementById('cp-new').value;
+  const msg = document.getElementById('cp-msg');
+  fetch('/auth/change-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+    body: JSON.stringify({ current_password: current, new_password: newPass }),
+  }).then(r => r.json().then(d => ({ ok: r.ok, data: d }))).then(({ ok, data }) => {
+    msg.style.display = 'block';
+    if (ok) { msg.style.color = 'var(--green)'; msg.textContent = 'Password updated'; document.getElementById('cp-current').value = ''; document.getElementById('cp-new').value = ''; }
+    else { msg.style.color = 'var(--red)'; msg.textContent = data.detail || 'Failed'; }
+  }).catch(() => { msg.style.display = 'block'; msg.style.color = 'var(--red)'; msg.textContent = 'Error'; });
 }
 
 function init() {
