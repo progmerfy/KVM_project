@@ -277,7 +277,7 @@ _APP_HTML = """<!DOCTYPE html>
         <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:auto;width:16px;height:16px;transition:transform 0.2s"><path d="m6 9 6 6 6-6"/></svg>
       </a>
       <div class="submenu" id="iso-submenu">
-        <a href="#" onclick="return loadISOs(event)">Browse ISOs</a>
+        <a href="#" onclick="return loadISOs(event)">Browse Images</a>
         <a href="#" onclick="return showUploadIsoDialog()">Upload ISO</a>
         <a href="#" onclick="return showDownloadIsoDialog()">Download from URL</a>
       </div>
@@ -506,7 +506,7 @@ function loadISOs() {
     const disks = imgs.filter(i => !i.name.toLowerCase().endsWith('.iso'));
     main.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <h1>ISO Store</h1>
+        <h1>Images</h1>
         <div style="display:flex;gap:8px">
           <button class="btn btn-ghost" onclick="showDownloadIsoDialog()">Download from URL</button>
           <button class="btn btn-primary" onclick="showUploadIsoDialog()">Upload ISO</button>
