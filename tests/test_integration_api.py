@@ -777,7 +777,7 @@ def test_clone_vm(monkeypatch):
     assert resp.json()["vm"]["ip_address"] == "192.168.122.50"
 
 
-def test_backup_vm(monkeypatch):
+def test_backup_vm(monkeypatch, tmp_path):
     mock_conn = MagicMock()
     dom = MagicMock()
     mock_conn.lookupByName.return_value = dom
@@ -790,6 +790,10 @@ def test_backup_vm(monkeypatch):
     )
     monkeypatch.setattr(
         "app.infrastructure.libvirt_driver.copy_disk_image", lambda src, dst: None
+    )
+    monkeypatch.setattr(
+        "app.services.vm_manager.settings.storage_pool",
+        str(tmp_path),
     )
 
     resp = client.post(

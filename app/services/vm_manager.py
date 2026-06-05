@@ -9,13 +9,14 @@ from app.api.schemas import VMCreateRequest, VMActionRequest, VMISORequest, VMRe
 from app.infrastructure import libvirt_driver, storage, network
 from app.errors import ServiceError
 from app.models.vm_spec import VMSpec
+from app.database import set_vm_owner, delete_vm_ownership, list_vms_for_user, get_vm_owner
 from app.config import settings
 from app.services import cloud_init
 
 logger = logging.getLogger(__name__)
 
 
-def create_vm(req: VMCreateRequest) -> dict:
+def create_vm(req: VMCreateRequest, owner_id: int = None) -> dict:
     host = req.host_uri or settings.default_host_uri
     spec = VMSpec(
         name=req.name,
@@ -86,6 +87,8 @@ def create_vm(req: VMCreateRequest) -> dict:
         }
         if root_password:
             result["root_password"] = root_password
+        if owner_id:
+            set_vm_owner(spec.name, owner_id)
         return result
     except Exception:
         logger.exception("create_vm failed, rolling back")
@@ -177,6 +180,19 @@ def delete_vm(req: VMActionRequest) -> None:
         cloud_init.cleanup_cloudinit_iso(req.name)
     except Exception:
         pass
+    try:
+        delete_vm_ownership(req.name)
+    except Exception:
+        pass
+
+
+def authorize_vm_access(vm_name: str, user: dict) -> bool:
+    if user.get("is_admin"):
+        return True
+    owner = get_vm_owner(vm_name)
+    if owner is None:
+        return True
+    return owner["id"] == user["id"]
 
 
 def get_vm_status(name: str, host_uri: str = None) -> str:
@@ -436,7 +452,7 @@ def import_vm(xml: str, disk_paths: list[str] = None, host_uri: str = None) -> d
             libvirt_driver.close(conn)
 
 
-def clone_vm(name: str, new_name: str, host_uri: str = None) -> dict:
+def clone_vm(name: str, new_name: str, host_uri: str = None, owner_id: int = None) -> dict:
     host = host_uri or settings.default_host_uri
     conn = libvirt_driver.connect(host)
     dst_disk = None
@@ -455,6 +471,8 @@ def clone_vm(name: str, new_name: str, host_uri: str = None) -> dict:
         defined = True
         libvirt_driver.start_vm(conn, new_name)
         ip = network.get_vm_ip(conn, new_name)
+        if owner_id:
+            set_vm_owner(new_name, owner_id)
         return {"name": new_name, "ip_address": ip, "disk": dst_disk}
     except Exception:
         logger.exception("clone_vm failed, rolling back")
@@ -575,10 +593,14 @@ def network_delete(name: str, host_uri: str = None) -> dict:
             libvirt_driver.close(conn)
 
 
-def list_vms(host_uri: str = None) -> list:
+def list_vms(host_uri: str = None, owner_id: int = None) -> list:
     host = host_uri or settings.default_host_uri
     conn = libvirt_driver.connect(host)
     try:
+        allowed = None
+        if owner_id is not None:
+            allowed = set(list_vms_for_user(owner_id))
+
         try:
             domains = conn.listAllDomains()
         except Exception:
@@ -593,9 +615,13 @@ def list_vms(host_uri: str = None) -> list:
                 name = d.name()
             except Exception:
                 name = "unknown"
+            if allowed is not None and name not in allowed:
+                continue
             try:
                 active = d.isActive()
-                state = "running" if active == 1 else "stopped"
+
+                state_map = {0: "nostate", 1: "running", 2: "blocked", 3: "paused", 4: "shutdown", 5: "shutoff", 6: "crashed"}  # fmt: skip
+                state = state_map.get(active, "unknown")
             except Exception:
                 state = "unknown"
             ip = network.get_vm_ip(conn, name) if state == "running" else None

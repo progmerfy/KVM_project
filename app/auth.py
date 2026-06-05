@@ -5,6 +5,8 @@ from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
+from app.database import get_user_by_id
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -53,3 +55,21 @@ def require_auth(
             detail="Missing authorization header",
         )
     return verify_token(credentials.credentials)
+
+
+def get_current_user(
+    payload: dict = Depends(require_auth),
+) -> dict:
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+        )
+    user = get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+        )
+    return user

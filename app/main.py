@@ -11,6 +11,7 @@ from app.api import vm_routes, image_routes, host_routes, auth_routes
 from app.config import settings
 from app.errors import AppError
 from app.auth import require_auth
+from app.database import init_db
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -47,13 +48,19 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app = FastAPI(
     title="KVM Manager API",
-    version="0.4.0",
+    version="0.5.0",
     description=(
         "Pre-production KVM/libvirt VM management API. "
         "Create VMs with cloud-init SSH access, manage OS images, "
         "monitor host resources."
     ),
 )
+
+
+@app.on_event("startup")
+def on_startup():
+    init_db()
+    logger.info("Database initialized")
 
 app.add_middleware(RequestLogMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
