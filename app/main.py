@@ -1204,7 +1204,6 @@ function init() {
     document.getElementById('vm-submenu').classList.add('open');
     document.querySelector('.chevron').classList.add('rotated');
     navigate();
-    window.addEventListener('hashchange', navigate);
   }).catch(() => { window.location.href = '/auth/login-page?redirect=/'; });
 }
 
