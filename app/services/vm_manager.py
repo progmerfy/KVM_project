@@ -412,6 +412,94 @@ def import_vm(xml: str, disk_paths: list[str] = None, host_uri: str = None) -> d
             libvirt_driver.close(conn)
 
 
+def clone_vm(name: str, new_name: str, host_uri: str = None) -> dict:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        xml = libvirt_driver.get_domain_xml(conn, name)
+        new_xml = libvirt_driver.rename_in_xml(xml, new_name)
+
+        src_disk = _get_disk_path(conn, name)
+        dst_disk = None
+        if src_disk:
+            dst_disk = str(Path(src_disk).parent / f"{new_name}.qcow2")
+            libvirt_driver.copy_disk_image(src_disk, dst_disk)
+            new_xml = new_xml.replace(src_disk, dst_disk)
+
+        libvirt_driver.define_vm(conn, new_xml)
+        libvirt_driver.start_vm(conn, new_name)
+        ip = network.get_vm_ip(conn, new_name)
+        return {"name": new_name, "ip_address": ip, "disk": dst_disk}
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
+def backup_vm(name: str, host_uri: str = None) -> dict:
+    from datetime import datetime
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        xml = libvirt_driver.get_domain_xml(conn, name)
+        src_disk = _get_disk_path(conn, name)
+
+        backup_dir = Path(settings.storage_pool) / "backups" / f"{name}_{datetime.now():%Y%m%d_%H%M%S}"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+
+        (backup_dir / f"{name}.xml").write_text(xml)
+
+        disks_backed_up = []
+        if src_disk:
+            dst = str(backup_dir / Path(src_disk).name)
+            libvirt_driver.copy_disk_image(src_disk, dst)
+            disks_backed_up.append(dst)
+
+        return {"name": name, "backup_dir": str(backup_dir), "disks": disks_backed_up}
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
+def restore_vm(backup_dir: str, new_name: str = None, host_uri: str = None) -> dict:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        backup_path = Path(backup_dir)
+        xml_path = next(backup_path.glob("*.xml"), None)
+        if not xml_path:
+            raise ServiceError("No XML found in backup directory", code="BACKUP_INVALID", http_status=400)
+
+        xml = xml_path.read_text()
+        if new_name:
+            xml = libvirt_driver.rename_in_xml(xml, new_name)
+
+        disk_files = list(backup_path.glob("*.qcow2"))
+        if disk_files:
+            src = str(disk_files[0])
+            dst = str(Path(settings.storage_pool) / disk_files[0].name)
+            if src != dst:
+                libvirt_driver.copy_disk_image(src, dst)
+                xml = xml.replace(src, dst)
+
+        vm_name = libvirt_driver.define_vm(conn, xml)
+        libvirt_driver.start_vm(conn, vm_name)
+        ip = network.get_vm_ip(conn, vm_name)
+        return {"name": vm_name, "ip_address": ip}
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
+def get_metrics(name: str, host_uri: str = None) -> dict:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        return libvirt_driver.get_metrics(conn, name)
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
 def network_create(name: str, bridge: str, subnet: str, host_uri: str = None) -> dict:
     host = host_uri or settings.default_host_uri
     conn = libvirt_driver.connect(host)

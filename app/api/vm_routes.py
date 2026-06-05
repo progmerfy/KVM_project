@@ -10,6 +10,9 @@ from app.api.schemas import (
     VMDetachDiskRequest,
     VMNetworkRequest,
     VMImportRequest,
+    VMCloneRequest,
+    VMBackupRequest,
+    VMRestoreRequest,
 )
 from app.services.vm_manager import (
     create_vm,
@@ -36,6 +39,10 @@ from app.services.vm_manager import (
     network_delete,
     export_vm,
     import_vm,
+    clone_vm,
+    backup_vm,
+    restore_vm,
+    get_metrics,
 )
 from app.errors import ServiceError
 from app.api.vnc import router as vnc_router
@@ -173,6 +180,30 @@ def api_export_vm(name: str, host_uri: str = None):
 def api_import_vm(req: VMImportRequest):
     result = import_vm(req.xml, req.disk_paths, req.host_uri)
     return {"status": "ok", "vm": result}
+
+
+@router.post("/clone")
+def api_clone_vm(req: VMCloneRequest):
+    result = clone_vm(req.name, req.new_name, req.host_uri)
+    return {"status": "ok", "vm": result}
+
+
+@router.post("/backup")
+def api_backup_vm(req: VMBackupRequest):
+    result = backup_vm(req.name, req.host_uri)
+    return {"status": "ok", "backup": result}
+
+
+@router.post("/restore")
+def api_restore_vm(req: VMRestoreRequest):
+    result = restore_vm(req.backup_dir, req.new_name, req.host_uri)
+    return {"status": "ok", "vm": result}
+
+
+@router.get("/metrics/{name}")
+def api_metrics(name: str, host_uri: str = None):
+    result = get_metrics(name, host_uri)
+    return {"status": "ok", "metrics": result}
 
 
 @router.post("/network/create")

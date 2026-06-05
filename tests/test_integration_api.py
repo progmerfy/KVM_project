@@ -738,3 +738,119 @@ def test_import_vm(monkeypatch):
     )
     assert resp.status_code == 200
     assert resp.json()["vm"]["name"] == "imported-vm"
+
+
+def test_clone_vm(monkeypatch):
+    mock_conn = MagicMock()
+    dom = MagicMock()
+    dom.isActive.return_value = 1
+    mock_conn.lookupByName.return_value = dom
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.connect", lambda uri: mock_conn
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.get_domain_xml",
+        lambda conn, name, flags=0: f"<domain><name>{name}</name><devices><disk type='file' device='disk'><source file='/tmp/{name}.qcow2'/><target dev='vda'/></disk></devices></domain>",
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.rename_in_xml", lambda xml, new_name: xml
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.copy_disk_image", lambda src, dst: None
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.define_vm", lambda conn, xml: None
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.start_vm", lambda conn, name: None
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.network.get_vm_ip", lambda conn, name: "192.168.122.50"
+    )
+
+    resp = client.post(
+        "/vm/clone",
+        json={"name": "vm1", "new_name": "vm1-clone"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["vm"]["name"] == "vm1-clone"
+    assert resp.json()["vm"]["ip_address"] == "192.168.122.50"
+
+
+def test_backup_vm(monkeypatch):
+    mock_conn = MagicMock()
+    dom = MagicMock()
+    mock_conn.lookupByName.return_value = dom
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.connect", lambda uri: mock_conn
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.get_domain_xml",
+        lambda conn, name, flags=0: "<domain><name>vm1</name></domain>",
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.copy_disk_image", lambda src, dst: None
+    )
+
+    resp = client.post(
+        "/vm/backup",
+        json={"name": "vm1"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+
+
+def test_restore_vm(monkeypatch, tmp_path):
+    backup_dir = tmp_path / "backup"
+    backup_dir.mkdir()
+    (backup_dir / "vm1.xml").write_text("<domain><name>vm1</name><devices><disk type='file' device='disk'><source file='/tmp/vm1.qcow2'/><target dev='vda'/></disk></devices></domain>")
+    (backup_dir / "vm1.qcow2").write_text("fake-disk-data")
+
+    mock_conn = MagicMock()
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.connect", lambda uri: mock_conn
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.rename_in_xml", lambda xml, new_name: xml
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.copy_disk_image", lambda src, dst: None
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.define_vm", lambda conn, xml: "vm1"
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.start_vm", lambda conn, name: None
+    )
+    monkeypatch.setattr(
+        "app.infrastructure.network.get_vm_ip", lambda conn, name: "192.168.122.60"
+    )
+
+    resp = client.post(
+        "/vm/restore",
+        json={"backup_dir": str(backup_dir)},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["vm"]["ip_address"] == "192.168.122.60"
+
+
+def test_metrics(monkeypatch):
+    mock_conn = MagicMock()
+    dom = MagicMock()
+    dom.info.return_value = (1, 2097152, 1048576, 4, 50000000000)
+    dom.memoryStats.return_value = {"available": 2097152, "unused": 524288}
+    dom.XMLDesc.return_value = "<domain><devices><disk type='file'><target dev='vda'/></disk></devices></domain>"
+    dom.blockStats.return_value = (100, 4096000, 200, 8192000)
+    mock_conn.lookupByName.return_value = dom
+    monkeypatch.setattr(
+        "app.infrastructure.libvirt_driver.connect", lambda uri: mock_conn
+    )
+
+    resp = client.get("/vm/metrics/test-vm")
+    assert resp.status_code == 200
+    body = resp.json()["metrics"]
+    assert body["state"] == "running"
+    assert body["cpu_count"] == 4
+    assert body["max_memory_mb"] == 2048
+    assert body["memory_mb"] == 1024
+    assert body["cpu_time_s"] == 50.0

@@ -425,6 +425,88 @@ def network_delete(conn, name: str) -> None:
         raise LibvirtError(f"failed to delete network: {e}")
 
 
+def get_metrics(conn, domain_name: str) -> dict:
+    _check_libvirt()
+    try:
+        dom = conn.lookupByName(domain_name)
+        info = dom.info()
+        state_map = {
+            0: "nostate", 1: "running", 2: "blocked",
+            3: "paused", 4: "shutdown", 5: "shutoff", 6: "crashed",
+        }
+        cpu_time_ns = info[4]
+
+        mem_stats = {}
+        try:
+            mem = dom.memoryStats()
+            for key in ("available", "unused", "usable", "actual"):
+                if key in mem:
+                    mem_stats[key] = mem[key] // 1024
+        except Exception:
+            pass
+
+        block_stats = {}
+        try:
+            xml = dom.XMLDesc(0)
+            import re
+            for m in re.finditer(r"<target dev='([^']+)'", xml):
+                dev = m.group(1)
+                try:
+                    stats = dom.blockStats(dev)
+                    block_stats[dev] = {
+                        "rd_req": stats[0],
+                        "rd_bytes": stats[1],
+                        "wr_req": stats[2],
+                        "wr_bytes": stats[3],
+                    }
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        return {
+            "state": state_map.get(info[0], "unknown"),
+            "max_memory_mb": info[1] // 1024,
+            "memory_mb": info[2] // 1024,
+            "cpu_count": info[3],
+            "cpu_time_ns": cpu_time_ns,
+            "cpu_time_s": round(cpu_time_ns / 1e9, 3),
+            "memory_stats": mem_stats,
+            "block_stats": block_stats,
+        }
+    except libvirt.libvirtError as e:
+        raise LibvirtError(f"failed to get metrics: {e}")
+
+
+def rename_in_xml(xml: str, new_name: str) -> str:
+    import re
+    xml = re.sub(r"<name>[^<]+</name>", f"<name>{new_name}</name>", xml)
+    xml = re.sub(
+        r"<uuid>[^<]+</uuid>",
+        lambda m: f"<uuid>{__import__('uuid').uuid4()}</uuid>",
+        xml,
+    )
+    return xml
+
+
+def copy_disk_image(src: str, dst: str) -> None:
+    import subprocess, time
+    for attempt in range(3):
+        try:
+            result = subprocess.run(
+                ["qemu-img", "convert", "-f", "qcow2", "-O", "qcow2", "-U", src, dst],
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode == 0:
+                logger.info("Copied disk %s -> %s", src, dst)
+                return
+            logger.warning("qemu-img convert attempt %d failed: %s", attempt + 1, result.stderr.strip())
+            time.sleep(2)
+        except subprocess.TimeoutExpired:
+            raise LibvirtError("disk copy timed out")
+    raise LibvirtError(f"failed to copy disk image after 3 attempts")
+
+
 def close(conn) -> None:
     try:
         conn.close()

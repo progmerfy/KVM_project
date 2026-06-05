@@ -82,3 +82,20 @@ class VMImportRequest(BaseModel):
     xml: str = Field(..., description="Full domain XML definition")
     disk_paths: Optional[list[str]] = Field(None, description="Disk image paths to copy")
     host_uri: Optional[str] = Field(None)
+
+
+class VMCloneRequest(BaseModel):
+    name: str = Field(..., description="Source VM name", min_length=1, max_length=64)
+    new_name: str = Field(..., description="New VM name", min_length=1, max_length=64)
+    host_uri: Optional[str] = Field(None)
+
+
+class VMBackupRequest(BaseModel):
+    name: str = Field(..., description="VM name", min_length=1, max_length=64)
+    host_uri: Optional[str] = Field(None)
+
+
+class VMRestoreRequest(BaseModel):
+    backup_dir: str = Field(..., description="Path to backup directory")
+    new_name: Optional[str] = Field(None, description="New VM name (optional)")
+    host_uri: Optional[str] = Field(None)
