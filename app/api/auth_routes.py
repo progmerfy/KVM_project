@@ -9,7 +9,7 @@ from typing import Optional
 from app.auth import create_access_token, get_current_user, require_auth
 from app.database import (
     verify_password,
-    get_user_by_username,
+    get_user_by_login,
     create_user,
     list_users,
 )
@@ -20,7 +20,7 @@ router = APIRouter()
 
 
 class LoginRequest(BaseModel):
-    username: str = Field(...)
+    username: str = Field(..., description="Username or email")
     password: str = Field(...)
 
 
@@ -32,6 +32,7 @@ class TokenResponse(BaseModel):
 class RegisterRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=32)
     password: str = Field(..., min_length=4, max_length=128)
+    email: str = Field(None, max_length=128)
     is_admin: bool = False
 
 
@@ -43,7 +44,7 @@ def login_page(redirect: str = "/"):
 @router.post("/login", response_model=TokenResponse)
 def login(req: LoginRequest):
     try:
-        user = get_user_by_username(req.username)
+        user = get_user_by_login(req.username)
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -52,8 +53,8 @@ def login(req: LoginRequest):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
         )
-    token = create_access_token({"sub": req.username, "user_id": user["id"]})
-    logger.info("User '%s' logged in", req.username)
+    token = create_access_token({"sub": user["username"], "user_id": user["id"]})
+    logger.info("User '%s' logged in via '%s'", user["username"], req.username)
     return TokenResponse(access_token=token)
 
 
@@ -70,7 +71,7 @@ def register(req: RegisterRequest, current_user: dict = Depends(get_current_user
             detail="Admin access required",
         )
     try:
-        user = create_user(req.username, req.password, req.is_admin)
+        user = create_user(req.username, req.password, req.is_admin, req.email)
         logger.info("Admin '%s' created user '%s'", current_user["username"], req.username)
         return {"status": "ok", "user": user}
     except ValueError as e:
@@ -94,6 +95,7 @@ def me(current_user: dict = Depends(get_current_user)):
         "user": {
             "id": current_user["id"],
             "username": current_user["username"],
+            "email": current_user.get("email"),
             "is_admin": bool(current_user["is_admin"]),
         },
     }
@@ -137,8 +139,8 @@ _LOGIN_PAGE_HTML = """<!DOCTYPE html>
   <h1>KVM Manager</h1>
   <div class="error" id="error">Invalid credentials</div>
   <form id="login-form">
-    <label for="username">Username</label>
-    <input type="text" id="username" value="admin" autocomplete="username">
+    <label for="username">Email or Username</label>
+    <input type="text" id="username" value="admin" autocomplete="username" placeholder="admin@localhost">
     <label for="password">Password</label>
     <input type="password" id="password" value="admin" autocomplete="current-password">
     <button type="submit">Sign In</button>

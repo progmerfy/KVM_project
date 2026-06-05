@@ -36,6 +36,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
+                email TEXT UNIQUE,
                 password_hash TEXT NOT NULL,
                 is_admin INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -53,13 +54,18 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_vm_name ON vm_ownership(vm_name);
         """)
 
+        # Add email column if missing (migration)
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(users)")]
+        if "email" not in cols:
+            conn.execute("ALTER TABLE users ADD COLUMN email TEXT UNIQUE")
+
         # Create default admin if not exists
         cur = conn.execute("SELECT id FROM users WHERE username = ?", ("admin",))
         if not cur.fetchone():
             pw = hash_password(os.getenv("API_PASSWORD", "admin"))
             conn.execute(
-                "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)",
-                ("admin", pw),
+                "INSERT INTO users (username, email, password_hash, is_admin) VALUES (?, ?, ?, 1)",
+                ("admin", "admin@localhost", pw),
             )
             logger.info("Created default admin user")
 
@@ -78,6 +84,16 @@ def get_user_by_username(username: str) -> dict | None:
         conn.close()
 
 
+def get_user_by_login(login: str) -> dict | None:
+    conn = _get_conn()
+    try:
+        cur = conn.execute("SELECT * FROM users WHERE username = ? OR email = ?", (login, login))
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
 def get_user_by_id(user_id: int) -> dict | None:
     conn = _get_conn()
     try:
@@ -88,16 +104,16 @@ def get_user_by_id(user_id: int) -> dict | None:
         conn.close()
 
 
-def create_user(username: str, password: str, is_admin: bool = False) -> dict:
+def create_user(username: str, password: str, is_admin: bool = False, email: str = None) -> dict:
     conn = _get_conn()
     try:
         pw = hash_password(password)
         cur = conn.execute(
-            "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)",
-            (username, pw, 1 if is_admin else 0),
+            "INSERT INTO users (username, email, password_hash, is_admin) VALUES (?, ?, ?, ?)",
+            (username, email, pw, 1 if is_admin else 0),
         )
         conn.commit()
-        return {"id": cur.lastrowid, "username": username, "is_admin": is_admin}
+        return {"id": cur.lastrowid, "username": username, "email": email, "is_admin": is_admin}
     except sqlite3.IntegrityError:
         raise ValueError(f"User '{username}' already exists")
     finally:
@@ -107,7 +123,7 @@ def create_user(username: str, password: str, is_admin: bool = False) -> dict:
 def list_users() -> list[dict]:
     conn = _get_conn()
     try:
-        cur = conn.execute("SELECT id, username, is_admin, created_at FROM users ORDER BY id")
+        cur = conn.execute("SELECT id, username, email, is_admin, created_at FROM users ORDER BY id")
         return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
