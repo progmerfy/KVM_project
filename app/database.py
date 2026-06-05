@@ -57,7 +57,8 @@ def init_db():
         # Add email column if missing (migration)
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(users)")]
         if "email" not in cols:
-            conn.execute("ALTER TABLE users ADD COLUMN email TEXT UNIQUE")
+            conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)")
 
         # Create default admin if not exists
         cur = conn.execute("SELECT id FROM users WHERE username = ?", ("admin",))
