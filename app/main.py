@@ -144,8 +144,8 @@ _APP_HTML = """<!DOCTYPE html>
   .topbar .user-menu .email { color: var(--text2); }
   .topbar .user-menu .logout {
     color: var(--text2); cursor: pointer; text-decoration: none; font-size: 12px;
-    padding: 4px 10px; border-radius: 6px; border: 1px solid transparent;
-    transition: all 0.15s;
+    padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+    transition: all 0.15s; display: inline-flex; align-items: center; gap: 4px;
   }
   .topbar .user-menu .logout:hover {
     color: var(--red); border-color: var(--red); background: rgba(239,68,68,0.1);
