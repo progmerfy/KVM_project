@@ -31,7 +31,7 @@ class TokenResponse(BaseModel):
 
 class RegisterRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=32)
-    password: str = Field(..., min_length=4, max_length=128)
+    password: str = Field(..., min_length=8, max_length=128)
     email: str = Field(None, max_length=128)
     is_admin: bool = False
 
@@ -179,7 +179,7 @@ _LOGIN_PAGE_HTML = """<!DOCTYPE html>
     <label for="reg-email">Email <span style="color:#71717a">(optional)</span></label>
     <input type="email" id="reg-email" placeholder="user@example.com" autocomplete="email">
     <label for="reg-pass">Password</label>
-    <input type="password" id="reg-pass" placeholder="min 4 chars" autocomplete="new-password" required>
+    <input type="password" id="reg-pass" placeholder="min 8 chars" autocomplete="new-password" required>
     <button type="submit">Create Account</button>
   </form>
 </div>
