@@ -161,8 +161,8 @@ _LOGIN_PAGE_HTML = """<!DOCTYPE html>
 <div class="box">
   <h1>KVM Manager</h1>
   <div class="tabs">
-    <div class="tab active" onclick="switchTab('login')">Sign In</div>
-    <div class="tab" onclick="switchTab('register')">Register</div>
+    <div class="tab active" data-tab="login" onclick="switchTab('login')">Sign In</div>
+    <div class="tab" data-tab="register" onclick="switchTab('register')">Register</div>
   </div>
   <div class="msg error" id="error"></div>
   <div class="msg ok" id="success"></div>
@@ -185,9 +185,8 @@ _LOGIN_PAGE_HTML = """<!DOCTYPE html>
 </div>
 <script>
 function switchTab(name) {{
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.form').forEach(f => f.classList.remove('active'));
-  document.querySelector('.tab[onclick="switchTab(\''+name+'\')"]').classList.add('active');
+  document.querySelectorAll('.tab, .form').forEach(el => el.classList.remove('active'));
+  document.querySelector('.tab[data-tab="'+name+'"]').classList.add('active');
   document.getElementById(name+'-form').classList.add('active');
   document.getElementById('error').style.display = 'none';
   document.getElementById('success').style.display = 'none';
