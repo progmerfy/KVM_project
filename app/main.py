@@ -125,7 +125,25 @@ _APP_HTML = """<!DOCTYPE html>
     font-family: 'Inter', system-ui, sans-serif;
     min-height: 100vh;
   }
-  .layout { display: flex; min-height: 100vh; }
+  .layout { display: flex; min-height: 100vh; flex-direction: column; }
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 48px; padding: 0 24px; background: var(--surface);
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .topbar .breadcrumbs { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text2); }
+  .topbar .breadcrumbs span { color: var(--text); font-weight: 500; }
+  .topbar .breadcrumbs a { color: var(--text2); text-decoration: none; }
+  .topbar .breadcrumbs a:hover { color: var(--text); }
+  .topbar .user-menu { display: flex; align-items: center; gap: 12px; font-size: 13px; }
+  .topbar .user-menu .avatar {
+    width: 28px; height: 28px; border-radius: 50%; background: var(--accent);
+    color: #000; display: flex; align-items: center; justify-content: center;
+    font-weight: 600; font-size: 12px;
+  }
+  .topbar .user-menu .email { color: var(--text2); }
+  .topbar .user-menu .logout { color: var(--red); cursor: pointer; text-decoration: none; font-size: 12px; }
+  .body-wrap { display: flex; flex: 1; }
   .sidebar {
     width: 220px; background: var(--surface);
     border-right: 1px solid var(--border);
@@ -224,6 +242,7 @@ _APP_HTML = """<!DOCTYPE html>
     .stats { grid-template-columns: 1fr; }
     .vm-grid { grid-template-columns: 1fr; }
     .detail-grid { grid-template-columns: 1fr; }
+    .topbar .user-menu .email { display: none; }
   }
   .create-form { max-width: 520px; }
   .create-form label { display: block; margin-bottom: 6px; font-size: 13px; color: #71717a; }
@@ -252,10 +271,54 @@ _APP_HTML = """<!DOCTYPE html>
   .modal h2 { font-size: 18px; margin-bottom: 20px; }
   .modal .close { float: right; cursor: pointer; color: #71717a; font-size: 20px; }
   .modal .close:hover { color: #fff; }
+  .confirm-btns { display: flex; gap: 8px; margin-top: 20px; }
+  .confirm-btns .btn { flex: 1; justify-content: center; padding: 10px; }
+  .skeleton { background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%); background-size: 200% 100%; animation: shimmer 1.2s ease-in-out infinite; border-radius: 8px; }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  .sk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+  .sk-card { height: 140px; }
+  .sk-widget { height: 100px; }
+  .tabs { display: flex; gap: 0; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
+  .tabs .tab {
+    padding: 10px 20px; font-size: 13px; font-weight: 500; cursor: pointer;
+    color: var(--text2); border-bottom: 2px solid transparent; transition: all 0.15s;
+  }
+  .tabs .tab:hover { color: var(--text); }
+  .tabs .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  .activity-list { display: flex; flex-direction: column; gap: 8px; }
+  .activity-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-size: 13px;
+  }
+  .activity-item .act-icon { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px; }
+  .activity-item .act-icon.create { background: rgba(34,197,94,0.15); color: var(--green); }
+  .activity-item .act-icon.stop { background: rgba(239,68,68,0.15); color: var(--red); }
+  .activity-item .act-icon.start { background: rgba(96,165,250,0.15); color: var(--accent); }
+  .activity-item .act-icon.delete { background: rgba(239,68,68,0.15); color: var(--red); }
+  .activity-item .act-text { flex: 1; }
+  .activity-item .act-text .act-name { font-weight: 500; }
+  .activity-item .act-text .act-time { font-size: 11px; color: var(--text2); margin-top: 2px; }
+  .btn.loading { opacity: 0.6; pointer-events: none; position: relative; }
+  .btn.loading::after {
+    content: ''; width: 14px; height: 14px; border: 2px solid transparent;
+    border-top-color: currentColor; border-radius: 50%; animation: spin 0.5s linear infinite;
+    display: inline-block; margin-left: 6px;
+  }
 </style>
 </head>
 <body>
 <div class="layout">
+  <div class="topbar">
+    <div class="breadcrumbs" id="breadcrumbs"><a href="#" onclick="return loadVMs(event)">Dashboard</a></div>
+    <div class="user-menu" id="user-menu">
+      <span class="email" id="user-email">Loading...</span>
+      <div class="avatar" id="user-avatar">U</div>
+      <a href="#" class="logout" onclick="return logout()">Logout</a>
+    </div>
+  </div>
+  <div class="body-wrap">
   <aside class="sidebar" id="sidebar">
     <div class="logo">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
@@ -286,12 +349,11 @@ _APP_HTML = """<!DOCTYPE html>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         Settings
       </a>
-      <a href="#" onclick="return logout()" style="margin-top:8px">
+      <a href="#" onclick="return logout()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         Logout
       </a>
     </nav>
-    <div class="user" id="user-info">Not authenticated</div>
   </aside>
   <main class="main" id="main-content">
     <div style="text-align:center;padding:80px 0">
@@ -299,12 +361,24 @@ _APP_HTML = """<!DOCTYPE html>
     </div>
   </main>
 </div>
+</div>
 <div id="toast" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surface2);color:var(--text);padding:10px 20px;border-radius:8px;font-size:13px;z-index:1000;opacity:0;transition:opacity 0.2s;border:1px solid var(--border);pointer-events:none;"></div>
 <div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
   <div class="modal">
     <span class="close" onclick="closeModal()">&times;</span>
-    <h2 id="modal-title">Create VM</h2>
+    <h2 id="modal-title">Modal</h2>
     <div id="modal-body"></div>
+  </div>
+</div>
+<div class="modal-overlay" id="confirm-overlay" onclick="if(event.target===this)closeConfirm()">
+  <div class="modal" style="width:380px">
+    <span class="close" onclick="closeConfirm()">&times;</span>
+    <h2 id="confirm-title">Confirm</h2>
+    <p id="confirm-message" style="color:var(--text2);font-size:14px;margin-bottom:8px"></p>
+    <div class="confirm-btns">
+      <button class="btn btn-ghost" onclick="closeConfirm()">Cancel</button>
+      <button class="btn btn-primary" id="confirm-btn" style="background:var(--red);color:#fff" onclick="closeConfirm()">Confirm</button>
+    </div>
   </div>
 </div>
 <script>
@@ -318,7 +392,7 @@ function api(path) {
 function showToast(msg) {
   const el = document.getElementById('toast');
   el.textContent = msg; el.style.opacity = '1';
-  setTimeout(() => el.style.opacity = '0', 2000);
+  setTimeout(() => el.style.opacity = '0', 2500);
   return false;
 }
 
@@ -342,6 +416,16 @@ function toggleSubmenu(e) {
 
 function openModal() { document.getElementById('modal-overlay').classList.add('open'); }
 function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
+function openConfirm() { document.getElementById('confirm-overlay').classList.add('open'); }
+function closeConfirm() { document.getElementById('confirm-overlay').classList.remove('open'); }
+
+function confirmAction(msg, fn) {
+  document.getElementById('confirm-title').textContent = 'Confirm';
+  document.getElementById('confirm-message').textContent = msg;
+  const btn = document.getElementById('confirm-btn');
+  btn.onclick = function() { closeConfirm(); fn(); };
+  openConfirm();
+}
 
 function logout() {
   localStorage.removeItem('token');
@@ -349,9 +433,25 @@ function logout() {
   return false;
 }
 
+function setBreadcrumbs(...crumbs) {
+  const el = document.getElementById('breadcrumbs');
+  el.innerHTML = crumbs.map((c, i) => {
+    if (i === crumbs.length - 1) return `<span>${c}</span>`;
+    return `<a href="#" onclick="return loadVMs(event)">${c}</a> <span style="color:var(--text2)">/</span>`;
+  }).join('');
+}
+
 function statusBadge(state) {
   const display = state === 'running' ? 'running' : 'stopped';
   return `<span class="status-badge ${display}"><span class="dot"></span>${display}</span>`;
+}
+
+function skeletonCards(n) {
+  return `<div class="sk-grid">${Array(n).fill('<div class="sk-card skeleton"></div>').join('')}</div>`;
+}
+
+function skeletonWidgets(n) {
+  return Array(n).fill('<div class="sk-widget skeleton"></div>').join('');
 }
 
 function vmCard(vm) {
@@ -366,24 +466,70 @@ function vmCard(vm) {
       <div class="info-item">IP <span>${vm.ip_address || '-'}</span></div>
     </div>
     <div class="actions" onclick="event.stopPropagation()">
-      ${vm.state === 'running' ? `<button class="btn btn-ghost" onclick="vmAction('${vm.name}','stop')">Stop</button>` : `<button class="btn btn-primary" onclick="vmAction('${vm.name}','start')">Start</button>`}
+      ${vm.state === 'running' ? `<button class="btn btn-ghost" onclick="vmAction('${vm.name}','stop',this)">Stop</button>` : `<button class="btn btn-primary" onclick="vmAction('${vm.name}','start',this)">Start</button>`}
       <button class="btn btn-ghost" onclick="window.location.href='/vm/vnc/console/${vm.name}'">Console</button>
     </div>
   </div>`;
 }
 
-function vmAction(name, action) {
+function addActivity(name, action) {
+  let log = JSON.parse(localStorage.getItem('activity_log') || '[]');
+  log.unshift({ name, action, time: Date.now() });
+  if (log.length > 20) log = log.slice(0, 20);
+  localStorage.setItem('activity_log', JSON.stringify(log));
+}
+
+function renderActivity() {
+  const log = JSON.parse(localStorage.getItem('activity_log') || '[]');
+  const icons = { start: '▶', stop: '⏹', create: '＋', delete: '✕', reboot: '↻' };
+  const labels = { start: 'Started', stop: 'Stopped', create: 'Created', delete: 'Deleted', reboot: 'Rebooted' };
+  if (!log.length) return '<div class="empty" style="grid-column:1"><p>No recent activity</p></div>';
+  return log.slice(0, 8).map(e => {
+    const icon = icons[e.action] || '●';
+    const label = labels[e.action] || e.action;
+    const ago = Math.floor((Date.now() - e.time) / 60000);
+    const timeStr = ago < 1 ? 'just now' : ago < 60 ? ago + 'm ago' : Math.floor(ago / 60) + 'h ago';
+    return `<div class="activity-item">
+      <div class="act-icon ${e.action}">${icon}</div>
+      <div class="act-text"><div class="act-name">${label} ${e.name}</div><div class="act-time">${timeStr}</div></div>
+    </div>`;
+  }).join('');
+}
+
+function vmAction(name, action, btn) {
+  if (action === 'stop' || action === 'delete') {
+    const verb = action === 'stop' ? 'stop' : 'delete';
+    confirmAction('Are you sure you want to ' + verb + ' VM "' + name + '"?', function() {
+      doVmAction(name, action, btn);
+    });
+    return;
+  }
+  doVmAction(name, action, btn);
+}
+
+function doVmAction(name, action, btn) {
+  if (btn) btn.classList.add('loading');
+  addActivity(name, action);
   return fetch('/vm/' + action, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
     body: JSON.stringify({ name }),
-  }).then(r => { if (r.ok) { showToast(action + ' ' + name); loadVMs(); } else { showToast('Failed: ' + action); } }).catch(() => showToast('Error'));
+  }).then(r => { if (r.ok) { showToast(action + ' ' + name); loadVMs(); } else { r.json().then(d => showToast(d.detail?.message || 'Failed')); if (btn) btn.classList.remove('loading'); } }).catch(() => { showToast('Error'); if (btn) btn.classList.remove('loading'); });
 }
 
 function loadVMs(e) {
   if (e) e.preventDefault();
+  setBreadcrumbs('Dashboard');
   const main = document.getElementById('main-content');
-  main.innerHTML = '<div style="text-align:center;padding:80px 0"><div class="spinner"></div></div>';
+  main.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h1>Dashboard</h1>
+      <button class="btn btn-primary" onclick="showCreateDialog()">+ New VM</button>
+    </div>
+    <p class="sub"><span class="skeleton" style="display:inline-block;width:200px;height:16px">&nbsp;</span></p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-bottom:32px">${skeletonWidgets(5)}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h2 style="font-size:18px;font-weight:600">Virtual Machines</h2></div>
+    ${skeletonCards(3)}`;
   Promise.all([
     api('/host/info').catch(() => ({})),
     api('/host/stats').catch(() => ({})),
@@ -453,25 +599,62 @@ function loadVMs(e) {
         </div>
       </div>
 
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <h2 style="font-size:18px;font-weight:600">Virtual Machines</h2>
-      </div>
-      <div class="vm-grid">${vms.length ? vms.map(vmCard).join('') : '<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><p>No virtual machines yet</p></div>'}</div>`;
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:24px;margin-bottom:32px">
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h2 style="font-size:18px;font-weight:600">Virtual Machines</h2>
+          </div>
+          <div class="vm-grid">${vms.length ? vms.map(vmCard).join('') : '<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><p>No virtual machines yet</p></div>'}</div>
+        </div>
+        <div>
+          <h2 style="font-size:16px;font-weight:600;margin-bottom:12px">Recent Activity</h2>
+          <div class="activity-list">${renderActivity()}</div>
+        </div>
+      </div>`;
   }).catch(() => { main.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load. Check your connection.</div>'; });
   return false;
 }
 
+let _detailTab = 'config';
+
 function loadDetail(name) {
   const main = document.getElementById('main-content');
-  main.innerHTML = '<div style="text-align:center;padding:80px 0"><div class="spinner"></div></div>';
+  setBreadcrumbs('Dashboard', name);
+  main.innerHTML = `
+    <div class="detail-header">
+      <h1>${name}</h1>
+      <p class="sub"><span class="skeleton" style="display:inline-block;width:120px;height:16px">&nbsp;</span></p>
+    </div>
+    <div class="actions" style="margin-bottom:24px">
+      <span class="skeleton" style="display:inline-block;width:200px;height:32px">&nbsp;</span>
+    </div>
+    <div class="tabs">
+      <div class="tab active" data-tab="config" onclick="switchDetailTab('config', '${name}')">Config</div>
+      <div class="tab" data-tab="snapshots" onclick="switchDetailTab('snapshots', '${name}')">Snapshots</div>
+      <div class="tab" data-tab="backups" onclick="switchDetailTab('backups', '${name}')">Backups</div>
+      <div class="tab" data-tab="metrics" onclick="switchDetailTab('metrics', '${name}')">Metrics</div>
+    </div>
+    <div id="detail-body"><div style="text-align:center;padding:40px"><div class="spinner"></div></div></div>`;
+  switchDetailTab('config', name);
+}
+
+function switchDetailTab(tab, name) {
+  _detailTab = tab;
+  document.querySelectorAll('.tabs .tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  const body = document.getElementById('detail-body');
+  if (tab === 'config') loadDetailConfig(name, body);
+  else if (tab === 'snapshots') loadDetailSnapshots(name, body);
+  else if (tab === 'backups') loadDetailBackups(name, body);
+  else if (tab === 'metrics') loadDetailMetrics(name, body);
+}
+
+function loadDetailConfig(name, body) {
   Promise.all([api('/vm/info/' + name), api('/vm/metrics/' + name).catch(() => ({}))]).then(([info, metrics]) => {
     const vm = info.vm || {};
     const m = metrics.metrics || {};
     const memStats = m.memory_stats || {};
-    main.innerHTML = `
-      <div class="detail-header">
-        <a href="/" class="back" onclick="return loadVMs(event)">← Back to VMs</a>
-        <h1>${vm.name}</h1>
+    body.innerHTML = `
+      <div class="detail-header" style="margin-bottom:16px">
         <p class="sub">${statusBadge(vm.state)}</p>
       </div>
       <div class="actions" style="margin-bottom:24px">
@@ -494,7 +677,114 @@ function loadDetail(name) {
           ${memStats.unused ? `<div class="row"><span class="label">Mem Unused</span><span class="value">${memStats.unused} MB</span></div>` : ''}
         </div>
       </div>`;
-  }).catch(() => { main.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load VM details</div>'; });
+  }).catch(() => { body.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load</div>'; });
+}
+
+function loadDetailSnapshots(name, body) {
+  body.innerHTML = '<div style="text-align:center;padding:40px"><div class="spinner"></div></div>';
+  api('/vm/snapshot/list/' + name).then(data => {
+    const snaps = data.snapshots || [];
+    body.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h3 style="font-size:16px;font-weight:600">Snapshots</h3>
+        <button class="btn btn-primary" onclick="createSnapshot('${name}')">+ Create Snapshot</button>
+      </div>
+      ${snaps.length ? `<div style="display:grid;gap:8px">${snaps.map(s => `
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px">
+          <span style="font-weight:500">${s.name}</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost" onclick="revertSnapshot('${name}','${s.name}')">Revert</button>
+            <button class="btn btn-ghost" onclick="deleteSnapshot('${name}','${s.name}')">Delete</button>
+          </div>
+        </div>`).join('')}</div>` : '<div class="empty"><p>No snapshots</p></div>'}`;
+  }).catch(() => { body.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load snapshots</div>'; });
+}
+
+function loadDetailBackups(name, body) {
+  body.innerHTML = '<div style="text-align:center;padding:40px"><div class="spinner"></div></div>';
+  api('/vm/export/' + name).then(data => {
+    const exp = data.export || {};
+    const backups = exp.backups || [];
+    body.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h3 style="font-size:16px;font-weight:600">Backups</h3>
+        <button class="btn btn-primary" onclick="createBackup('${name}')">+ Backup Now</button>
+      </div>
+      ${backups.length ? `<div style="display:grid;gap:8px">${backups.map(b => `
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px">
+          <span style="font-weight:500">${b.path || b}</span>
+        </div>`).join('')}</div>` : '<div class="empty"><p>No backups yet</p></div>'}`;
+  }).catch(() => { body.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load backups</div>'; });
+}
+
+function loadDetailMetrics(name, body) {
+  body.innerHTML = '<div style="text-align:center;padding:40px"><div class="spinner"></div></div>';
+  api('/vm/metrics/' + name).then(data => {
+    const m = data.metrics || {};
+    body.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="detail-section">
+          <h3>CPU</h3>
+          <div class="row"><span class="label">Count</span><span class="value">${m.cpu_count || '-'}</span></div>
+          <div class="row"><span class="label">Time</span><span class="value">${m.cpu_time_s || '-'} s</span></div>
+        </div>
+        <div class="detail-section">
+          <h3>Memory</h3>
+          <div class="row"><span class="label">Max</span><span class="value">${m.max_memory_mb || '-'} MB</span></div>
+          <div class="row"><span class="label">Current</span><span class="value">${m.memory_mb || '-'} MB</span></div>
+          ${(m.memory_stats || {}).available ? `<div class="row"><span class="label">Available</span><span class="value">${m.memory_stats.available} MB</span></div>` : ''}
+        </div>
+      </div>
+      ${Object.keys(m.block_stats || {}).length ? `
+        <h3 style="font-size:14px;font-weight:600;margin:20px 0 12px;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px">Block Devices</h3>
+        <div style="display:grid;gap:8px">${Object.entries(m.block_stats).map(([dev, s]) => `
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px">
+            <div style="font-weight:500;margin-bottom:6px">${dev}</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;color:var(--text2)">
+              <span>Read: ${(s.rd_bytes / 1e6).toFixed(1)} MB</span>
+              <span>Write: ${(s.wr_bytes / 1e6).toFixed(1)} MB</span>
+              <span>Read req: ${s.rd_req}</span>
+              <span>Write req: ${s.wr_req}</span>
+            </div>
+          </div>`).join('')}</div>` : ''}
+      <div style="margin-top:16px">
+        <h3 style="font-size:14px;font-weight:600;margin-bottom:12px;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px">State</h3>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-size:13px">
+          ${m.state || 'unknown'}
+        </div>
+      </div>`;
+  }).catch(() => { body.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load metrics</div>'; });
+}
+
+function createSnapshot(name) {
+  const snap = prompt('Snapshot name:');
+  if (!snap) return;
+  fetch('/vm/snapshot/create?name=' + encodeURIComponent(name) + '&snap_name=' + encodeURIComponent(snap), {
+    method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN },
+  }).then(r => { if (r.ok) { showToast('Snapshot created'); switchDetailTab('snapshots', name); } else showToast('Failed'); });
+}
+
+function revertSnapshot(name, snap) {
+  confirmAction('Revert to snapshot "' + snap + '"?', function() {
+    fetch('/vm/snapshot/revert?name=' + encodeURIComponent(name) + '&snap_name=' + encodeURIComponent(snap), {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN },
+    }).then(r => { if (r.ok) { showToast('Reverted to ' + snap); loadVMs(); } else showToast('Failed'); });
+  });
+}
+
+function deleteSnapshot(name, snap) {
+  confirmAction('Delete snapshot "' + snap + '"?', function() {
+    fetch('/vm/snapshot/delete?name=' + encodeURIComponent(name) + '&snap_name=' + encodeURIComponent(snap), {
+      method: 'DELETE', headers: { 'Authorization': 'Bearer ' + TOKEN },
+    }).then(r => { if (r.ok) { showToast('Deleted'); switchDetailTab('snapshots', name); } else showToast('Failed'); });
+  });
+}
+
+function createBackup(name) {
+  fetch('/vm/backup', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+    body: JSON.stringify({ name }),
+  }).then(r => { if (r.ok) { showToast('Backup created'); switchDetailTab('backups', name); } else showToast('Failed'); });
 }
 
 function uploadIso() {
@@ -536,11 +826,12 @@ function downloadIso() {
 }
 
 function deleteIso(name) {
-  if (!confirm('Delete ' + name + '?')) return;
-  fetch('/images/' + encodeURIComponent(name), {
-    method: 'DELETE',
-    headers: { 'Authorization': 'Bearer ' + TOKEN },
-  }).then(r => { if (r.ok) { showToast(name + ' deleted'); loadISOs(); } else { showToast('Delete failed'); } }).catch(() => showToast('Error'));
+  confirmAction('Delete image "' + name + '"?', function() {
+    fetch('/images/' + encodeURIComponent(name), {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + TOKEN },
+    }).then(r => { if (r.ok) { showToast(name + ' deleted'); loadISOs(); } else { showToast('Delete failed'); } }).catch(() => showToast('Error'));
+  });
 }
 
 function toggleIsoSubmenu(e) {
@@ -555,7 +846,17 @@ function toggleIsoSubmenu(e) {
 
 function loadISOs() {
   const main = document.getElementById('main-content');
-  main.innerHTML = '<div style="text-align:center;padding:80px 0"><div class="spinner"></div></div>';
+  setBreadcrumbs('ISO Store', 'Browse Images');
+  main.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h1>Images</h1>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="showDownloadIsoDialog()">Download from URL</button>
+        <button class="btn btn-primary" onclick="showUploadIsoDialog()">Upload ISO</button>
+      </div>
+    </div>
+    <p class="sub"><span class="skeleton" style="display:inline-block;width:180px;height:16px">&nbsp;</span></p>
+    ${skeletonCards(3)}`;
   api('/images/list').then(data => {
     const imgs = data.images || [];
     const isos = imgs.filter(i => i.name.toLowerCase().endsWith('.iso'));
@@ -578,6 +879,7 @@ function loadISOs() {
 
 function loadRepoImages() {
   const main = document.getElementById('main-content');
+  setBreadcrumbs('ISO Store', 'Repo Images');
   main.innerHTML = '<div style="text-align:center;padding:80px 0"><div class="spinner"></div></div>';
   const famLabels = { debian: 'Debian-like (Debian, Ubuntu)', rhel: 'RHEL-like (Fedora, CentOS, Rocky, Alma)', arch: 'Arch-like (Arch Linux)' };
   api('/images/repo/list').then(data => {
@@ -664,6 +966,7 @@ function showDownloadIsoDialog() {
 }
 
 function showCreateDialog() {
+  setBreadcrumbs('Dashboard', 'Create VM');
   api('/images/list').then(images => {
     const imgs = images.images || [];
     const opts = imgs.length ? imgs.map(i => `<option value="${i.path}">${i.name || i.path}</option>`).join('') : '<option value="">No images available</option>';
@@ -671,7 +974,7 @@ function showCreateDialog() {
     document.getElementById('modal-body').innerHTML = `
       <form id="create-vm-form" onsubmit="return createVM(event)">
         <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">Name</label>
-        <input type="text" id="vm-name" placeholder="my-vm" required style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
+        <input type="text" id="vm-name" placeholder="my-vm" required autofocus style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
 
         <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">Base Image</label>
         <select id="vm-image" required style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">${opts}</select>
@@ -711,6 +1014,7 @@ function createVM(e) {
   const ssh = document.getElementById('vm-ssh').value;
   if (ssh) body.cloud_init_ssh_key = ssh;
   closeModal();
+  addActivity(body.name, 'create');
   fetch('/vm/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
@@ -724,8 +1028,10 @@ function createVM(e) {
 }
 
 function init() {
-  api('/health/secured').then(d => {
-    document.getElementById('user-info').textContent = d.user;
+  api('/auth/me').then(d => {
+    const user = d.user || {};
+    document.getElementById('user-email').textContent = user.email || user.username || 'User';
+    document.getElementById('user-avatar').textContent = (user.username || 'U')[0].toUpperCase();
     document.getElementById('vm-submenu').classList.add('open');
     document.querySelector('.chevron').classList.add('rotated');
     loadVMs();
