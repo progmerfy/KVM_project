@@ -271,6 +271,16 @@ _APP_HTML = """<!DOCTYPE html>
         <a href="#" onclick="return loadVMs(event)">List VMs</a>
         <a href="#" onclick="return showCreateDialog()">+ Create VM</a>
       </div>
+      <a href="#" onclick="return toggleIsoSubmenu(event)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        ISO Store
+        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:auto;width:16px;height:16px;transition:transform 0.2s"><path d="m6 9 6 6 6-6"/></svg>
+      </a>
+      <div class="submenu" id="iso-submenu">
+        <a href="#" onclick="return loadISOs(event)">Browse ISOs</a>
+        <a href="#" onclick="return showUploadIsoDialog()">Upload ISO</a>
+        <a href="#" onclick="return showDownloadIsoDialog()">Download from URL</a>
+      </div>
       <a href="#" onclick="return showToast('Coming soon')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         Settings
@@ -429,6 +439,134 @@ function loadDetail(name) {
         </div>
       </div>`;
   }).catch(() => { main.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load VM details</div>'; });
+}
+
+function uploadIso() {
+  const fileInput = document.getElementById('iso-file');
+  const file = fileInput.files[0];
+  if (!file) { showToast('Select a file'); return; }
+  const fd = new FormData();
+  fd.append('file', file);
+  if (document.getElementById('iso-upload-name').value) fd.append('name', document.getElementById('iso-upload-name').value);
+  closeModal();
+  fetch('/images/upload', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + TOKEN },
+    body: fd,
+  }).then(r => r.json().then(d => ({ ok: r.ok, data: d }))).then(({ ok, data }) => {
+    if (!ok) { showToast(data.detail?.message || 'Upload failed'); return; }
+    showToast('ISO uploaded');
+    loadISOs();
+  }).catch(() => showToast('Upload error'));
+}
+
+function downloadIso() {
+  const url = document.getElementById('iso-url').value;
+  if (!url) { showToast('Enter a URL'); return; }
+  const name = document.getElementById('iso-dl-name').value;
+  const fd = new FormData();
+  fd.append('url', url);
+  if (name) fd.append('name', name);
+  closeModal();
+  fetch('/images/download', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + TOKEN },
+    body: fd,
+  }).then(r => r.json().then(d => ({ ok: r.ok, data: d }))).then(({ ok, data }) => {
+    if (!ok) { showToast(data.detail?.message || 'Download failed'); return; }
+    showToast('ISO downloaded');
+    loadISOs();
+  }).catch(() => showToast('Download error'));
+}
+
+function deleteIso(name) {
+  if (!confirm('Delete ' + name + '?')) return;
+  fetch('/images/' + encodeURIComponent(name), {
+    method: 'DELETE',
+    headers: { 'Authorization': 'Bearer ' + TOKEN },
+  }).then(r => { if (r.ok) { showToast(name + ' deleted'); loadISOs(); } else { showToast('Delete failed'); } }).catch(() => showToast('Error'));
+}
+
+function toggleIsoSubmenu(e) {
+  e.preventDefault();
+  const parent = e.currentTarget;
+  const sub = document.getElementById('iso-submenu');
+  const chevron = parent.querySelector('.chevron');
+  sub.classList.toggle('open');
+  chevron.classList.toggle('rotated');
+  return false;
+}
+
+function loadISOs() {
+  const main = document.getElementById('main-content');
+  main.innerHTML = '<div style="text-align:center;padding:80px 0"><div class="spinner"></div></div>';
+  api('/images/list').then(data => {
+    const imgs = data.images || [];
+    const isos = imgs.filter(i => i.name.toLowerCase().endsWith('.iso'));
+    const disks = imgs.filter(i => !i.name.toLowerCase().endsWith('.iso'));
+    main.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h1>ISO Store</h1>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="showDownloadIsoDialog()">Download from URL</button>
+          <button class="btn btn-primary" onclick="showUploadIsoDialog()">Upload ISO</button>
+        </div>
+      </div>
+      <p class="sub">${isos.length} ISO${isos.length !== 1 ? 's' : ''}, ${disks.length} disk image${disks.length !== 1 ? 's' : ''}</p>
+      <div class="vm-grid">
+        ${isos.length ? isos.map(isoCard).join('') : '<div class="empty"><p>No ISOs yet. Upload or download one.</p></div>'}
+      </div>
+      ${disks.length ? `<h2 style="font-size:16px;margin:24px 0 12px">Disk Images</h2><div class="vm-grid">${disks.map(isoCard).join('')}</div>` : ''}`;
+  }).catch(() => { main.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load</div>'; });
+}
+
+function isoCard(img) {
+  const isIso = img.name.toLowerCase().endsWith('.iso');
+  const size = img.actual_size_bytes ? (img.actual_size_bytes / (1024*1024)).toFixed(1) + ' MB' : img.virtual_size_gb + ' GB';
+  return `<div class="vm-card">
+    <div class="top">
+      <div class="name">${img.name}</div>
+    </div>
+    <div class="info">
+      <div class="info-item">Size <span>${size}</span></div>
+      <div class="info-item">Format <span>${img.format || '-'}</span></div>
+    </div>
+    <div class="actions" onclick="event.stopPropagation()">
+      <button class="btn btn-ghost" onclick="deleteIso('${img.name}')">Delete</button>
+    </div>
+  </div>`;
+}
+
+function showUploadIsoDialog() {
+  document.getElementById('modal-title').textContent = 'Upload ISO';
+  document.getElementById('modal-body').innerHTML = `
+    <form onsubmit="uploadIso();return false">
+      <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">File</label>
+      <input type="file" id="iso-file" style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
+      <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">Name <span style="color:#52525b">(optional, defaults to filename)</span></label>
+      <input type="text" id="iso-upload-name" placeholder="my-image.iso" style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
+      <div style="display:flex;gap:8px">
+        <button type="submit" class="btn btn-primary" style="flex:1">Upload</button>
+        <button type="button" class="btn btn-ghost" onclick="closeModal()" style="flex:1">Cancel</button>
+      </div>
+    </form>`;
+  openModal();
+}
+
+function showDownloadIsoDialog() {
+  document.getElementById('modal-title').textContent = 'Download ISO from URL';
+  document.getElementById('modal-body').innerHTML = `
+    <form onsubmit="downloadIso();return false">
+      <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">URL</label>
+      <input type="url" id="iso-url" placeholder="https://releases.ubuntu.com/ubuntu.iso" required style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
+      <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">Name <span style="color:#52525b">(optional, defaults from URL)</span></label>
+      <input type="text" id="iso-dl-name" placeholder="my-image.iso" style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
+      <div style="display:flex;gap:8px">
+        <button type="submit" class="btn btn-primary" style="flex:1">Download</button>
+        <button type="button" class="btn btn-ghost" onclick="closeModal()" style="flex:1">Cancel</button>
+      </div>
+    </form>`;
+  openModal();
 }
 
 function showCreateDialog() {

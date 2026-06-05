@@ -1,5 +1,7 @@
 import os
 import logging
+import subprocess
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, UploadFile, File, Form
 from fastapi.responses import JSONResponse
@@ -79,6 +81,38 @@ def api_upload_image(
     if img:
         return {"status": "ok", "image": img.model_dump()}
     return {"status": "ok", "message": f"file '{fname}' uploaded"}
+
+
+@router.post("/download")
+def api_download_image(url: str = Form(...), name: str = Form(None)):
+    image_dir = _get_image_dir()
+    os.makedirs(image_dir, exist_ok=True)
+
+    fname = name or os.path.basename(urlparse(url).path)
+    if not fname:
+        raise ServiceError("could not determine filename", code="INVALID_REQUEST", http_status=400)
+
+    dest = os.path.join(image_dir, fname)
+    if os.path.exists(dest):
+        raise ServiceError(
+            f"file '{fname}' already exists", code="IMAGE_ALREADY_EXISTS", http_status=409
+        )
+
+    try:
+        logger.info("Downloading %s -> %s", url, dest)
+        subprocess.check_call(["curl", "-L", "-o", dest, url], timeout=600)
+        logger.info("Downloaded: %s", dest)
+    except subprocess.TimeoutExpired:
+        raise ServiceError("download timed out", code="DOWNLOAD_TIMEOUT", http_status=500)
+    except Exception as e:
+        if os.path.exists(dest):
+            os.remove(dest)
+        raise ServiceError(f"download failed: {e}", code="DOWNLOAD_FAILED", http_status=500)
+
+    img = image_manager.get_image(fname)
+    if img:
+        return {"status": "ok", "image": img.model_dump()}
+    return {"status": "ok", "message": f"'{fname}' downloaded"}
 
 
 @router.get("/storage/info")
