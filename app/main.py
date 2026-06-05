@@ -530,6 +530,7 @@ function doVmAction(name, action, btn) {
 
 function loadVMs(e) {
   if (e) e.preventDefault();
+  setHash('/');
   setBreadcrumbs('Dashboard');
   const main = document.getElementById('main-content');
   main.innerHTML = `
@@ -642,6 +643,7 @@ let _detailTab = 'config';
 function loadDetail(name) {
   const main = document.getElementById('main-content');
   setBreadcrumbs('Dashboard', name);
+  setHash('/vm/' + name);
   main.innerHTML = `
     <div class="detail-header">
       <h1>${name}</h1>
@@ -662,6 +664,7 @@ function loadDetail(name) {
 
 function switchDetailTab(tab, name) {
   _detailTab = tab;
+  setHash('/vm/' + name + '/tab/' + tab);
   document.querySelectorAll('.tabs .tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   const body = document.getElementById('detail-body');
   if (tab === 'config') loadDetailConfig(name, body);
@@ -940,6 +943,7 @@ function toggleIsoSubmenu(e) {
 function loadISOs() {
   const main = document.getElementById('main-content');
   setBreadcrumbs('ISO Store', 'Browse Images');
+  setHash('/isos');
   main.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <h1>Images</h1>
@@ -973,6 +977,7 @@ function loadISOs() {
 function loadRepoImages() {
   const main = document.getElementById('main-content');
   setBreadcrumbs('ISO Store', 'Repo Images');
+  setHash('/isos/repo');
   main.innerHTML = '<div style="text-align:center;padding:80px 0"><div class="spinner"></div></div>';
   const famLabels = { debian: 'Debian-like (Debian, Ubuntu)', rhel: 'RHEL-like (Fedora, CentOS, Rocky, Alma)', arch: 'Arch-like (Arch Linux)' };
   api('/images/repo/list').then(data => {
@@ -1123,6 +1128,7 @@ function createVM(e) {
 function loadSettings(e) {
   if (e) e.preventDefault();
   setBreadcrumbs('Settings');
+  setHash('/settings');
   const main = document.getElementById('main-content');
   api('/auth/me').then(d => {
     const user = d.user || {};
@@ -1197,10 +1203,31 @@ function init() {
     document.getElementById('user-avatar').textContent = (user.username || 'U')[0].toUpperCase();
     document.getElementById('vm-submenu').classList.add('open');
     document.querySelector('.chevron').classList.add('rotated');
-    loadVMs();
+    navigate();
+    window.addEventListener('hashchange', navigate);
   }).catch(() => { window.location.href = '/auth/login-page?redirect=/'; });
 }
-init();
+
+function navigate() {
+  const hash = window.location.hash.slice(1) || '/';
+  if (hash.startsWith('/vm/')) {
+    const parts = hash.split('/');
+    const name = parts[2];
+    const tab = parts[4] || 'config';
+    if (name) { loadDetail(name); if (tab !== _detailTab) setTimeout(() => switchDetailTab(tab, name), 100); }
+    return;
+  }
+  if (hash === '/settings') { loadSettings(); return; }
+  if (hash === '/isos') { loadISOs(); return; }
+  if (hash === '/isos/repo') { loadRepoImages(); return; }
+  loadVMs();
+}
+
+function setHash(h) {
+  if (window.location.hash.slice(1) !== h) {
+    window.location.hash = h;
+  }
+}
 </script>
 </body>
 </html>"""
