@@ -562,7 +562,7 @@ function loadVMs(e) {
         <h1>Dashboard</h1>
         <button class="btn btn-primary" onclick="showCreateDialog()">+ New VM</button>
       </div>
-      <p class="sub">${h.hostname || 'host'} &middot; ${h.cpu?.model || ''} &middot; ${h.cpu?.cores || '?'} cores</p>
+      <p class="sub">${h.hostname || 'host'} &middot; ${h.cpu?.model || ''} &middot; ${h.cpu?.cores || '?'} cores${h.uptime ? ' &middot; Uptime: ' + h.uptime : ''}</p>
 
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-bottom:32px">
         <div class="stat-card">
@@ -614,8 +614,9 @@ function loadVMs(e) {
         <div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
             <h2 style="font-size:18px;font-weight:600">Virtual Machines</h2>
+            <input type="text" id="vm-search" placeholder="Search VMs..." oninput="filterVMs(this.value)" style="padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;font-family:inherit;width:200px">
           </div>
-          <div class="vm-grid">${vms.length ? vms.map(vmCard).join('') : '<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><p>No virtual machines yet</p></div>'}</div>
+          <div class="vm-grid" id="vm-grid">${vms.length ? vms.map(vmCard).join('') : '<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><p>No virtual machines yet</p></div>'}</div>
         </div>
         <div>
           <h2 style="font-size:16px;font-weight:600;margin-bottom:12px">Recent Activity</h2>
@@ -624,6 +625,16 @@ function loadVMs(e) {
       </div>`;
   }).catch(() => { main.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load. Check your connection.</div>'; });
   return false;
+}
+
+function filterVMs(q) {
+  const grid = document.getElementById('vm-grid');
+  if (!grid) return;
+  const cards = grid.querySelectorAll('.vm-card');
+  cards.forEach(c => {
+    const name = c.querySelector('.name')?.textContent || '';
+    c.style.display = name.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
+  });
 }
 
 let _detailTab = 'config';
@@ -664,31 +675,102 @@ function loadDetailConfig(name, body) {
     const vm = info.vm || {};
     const m = metrics.metrics || {};
     const memStats = m.memory_stats || {};
+    const disks = vm.disks || [];
+    const nets = vm.interfaces || [];
+    const uptime = vm.uptime_seconds;
+    const uptimeStr = uptime ? Math.floor(uptime / 3600) + 'h ' + Math.floor((uptime % 3600) / 60) + 'm' : '-';
     body.innerHTML = `
-      <div class="detail-header" style="margin-bottom:16px">
-        <p class="sub">${statusBadge(vm.state)}</p>
-      </div>
-      <div class="actions" style="margin-bottom:24px">
-        ${vm.state === 'running' ? `<button class="btn btn-ghost" onclick="vmAction('${vm.name}','stop')">Stop</button><button class="btn btn-ghost" onclick="vmAction('${vm.name}','reboot')">Reboot</button>` : `<button class="btn btn-primary" onclick="vmAction('${vm.name}','start')">Start</button>`}
-        <button class="btn btn-primary" onclick="window.location.href='/vm/vnc/console/${vm.name}'">Open Console</button>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div><p class="sub">${statusBadge(vm.state)} ${uptime ? '&middot; Uptime: ' + uptimeStr : ''}</p></div>
+        <div style="display:flex;gap:6px">
+          ${vm.state === 'running' ? `<button class="btn btn-ghost" onclick="vmAction('${vm.name}','stop')">Stop</button><button class="btn btn-ghost" onclick="vmAction('${vm.name}','reboot')">Reboot</button>` : `<button class="btn btn-primary" onclick="vmAction('${vm.name}','start')">Start</button>`}
+          <button class="btn btn-primary" onclick="window.location.href='/vm/vnc/console/${vm.name}'">Console</button>
+        </div>
       </div>
       <div class="detail-grid">
         <div class="detail-section">
           <h3>Configuration</h3>
-          <div class="row"><span class="label">CPU</span><span class="value">${vm.cpu || '-'} vCPUs</span></div>
+          <div class="row"><span class="label">vCPUs</span><span class="value">${vm.cpu || '-'}</span></div>
           <div class="row"><span class="label">Memory</span><span class="value">${vm.memory_mb || '-'} MB</span></div>
           <div class="row"><span class="label">IP Address</span><span class="value">${vm.ip_address || '-'}</span></div>
-          <div class="row"><span class="label">State</span><span class="value">${vm.state}</span></div>
+          <div class="row"><span class="label">OS Type</span><span class="value">${vm.os_type || '-'}</span></div>
+          <div class="row"><span class="label">UUID</span><span class="value" style="font-size:11px;font-family:monospace">${vm.uuid || '-'}</span></div>
+          <div class="row"><span class="label">VNC Port</span><span class="value">${vm.vnc_port || '-'}</span></div>
+          <div class="row" style="display:flex;justify-content:space-between;align-items:center">
+            <span class="label">Auto Start</span>
+            <label style="position:relative;display:inline-block;width:36px;height:20px;cursor:pointer">
+              <input type="checkbox" ${vm.autostart ? 'checked' : ''} onchange="toggleAutostart('${vm.name}', this.checked)" style="opacity:0;width:0;height:0">
+              <span style="position:absolute;inset:0;background:${vm.autostart ? 'var(--accent)' : 'var(--border)'};border-radius:10px;transition:0.2s">
+                <span style="position:absolute;top:2px;left:${vm.autostart ? '18px' : '2px'};width:16px;height:16px;background:#fff;border-radius:50%;transition:0.2s"></span>
+              </span>
+            </label>
+          </div>
         </div>
         <div class="detail-section">
           <h3>Performance</h3>
           <div class="row"><span class="label">CPU Time</span><span class="value">${m.cpu_time_s || '-'} s</span></div>
+          <div class="row"><span class="label">Max Memory</span><span class="value">${m.max_memory_mb || vm.max_memory_mb || '-'} MB</span></div>
           <div class="row"><span class="label">Memory (host)</span><span class="value">${m.memory_mb || '-'} MB</span></div>
           ${memStats.available ? `<div class="row"><span class="label">Mem Available</span><span class="value">${memStats.available} MB</span></div>` : ''}
           ${memStats.unused ? `<div class="row"><span class="label">Mem Unused</span><span class="value">${memStats.unused} MB</span></div>` : ''}
         </div>
+      </div>
+      ${disks.length ? `<div class="detail-section" style="margin-top:16px">
+        <h3>Storage (${disks.length} device${disks.length > 1 ? 's' : ''})</h3>
+        ${disks.map(d => `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);font-size:14px">
+            <div><span style="font-weight:500">${d.target || '?'}</span> <span style="color:var(--text2);font-size:12px">${d.device || ''}${d.readonly ? ' (ro)' : ''}</span></div>
+            <div style="text-align:right;font-size:12px;color:var(--text2);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.source || '-'}</div>
+          </div>`).join('')}
+      </div>` : ''}
+      ${nets.length ? `<div class="detail-section" style="margin-top:16px">
+        <h3>Network Interfaces (${nets.length})</h3>
+        ${nets.map(n => `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);font-size:14px">
+            <div><span style="font-weight:500;font-family:monospace;font-size:13px">${n.mac || '?'}</span></div>
+            <div><span style="color:var(--text2);font-size:13px">${n.source || ''}${n.model ? ' (' + n.model + ')' : ''}</span></div>
+          </div>`).join('')}
+      </div>` : ''}
+      <div style="display:flex;gap:8px;margin-top:24px">
+        <button class="btn btn-ghost" onclick="vmAction('${name}','delete')" style="color:var(--red);border-color:var(--red)">Delete VM</button>
+        <button class="btn btn-ghost" onclick="showCloneDialog('${name}')">Clone</button>
       </div>`;
   }).catch(() => { body.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load</div>'; });
+}
+
+function toggleAutostart(name, enable) {
+  fetch('/vm/autostart?name=' + encodeURIComponent(name) + '&enable=' + enable, {
+    method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN },
+  }).then(r => { if (r.ok) showToast('Autostart ' + (enable ? 'enabled' : 'disabled')); });
+}
+
+function showCloneDialog(name) {
+  document.getElementById('modal-title').textContent = 'Clone VM';
+  document.getElementById('modal-body').innerHTML = `
+    <form onsubmit="return doClone(event, '${name}')">
+      <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">New VM Name</label>
+      <input type="text" id="clone-name" placeholder="${name}-clone" required style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
+      <div style="display:flex;gap:8px">
+        <button type="submit" class="btn btn-primary" style="flex:1">Clone</button>
+        <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      </div>
+    </form>`;
+  openModal();
+}
+
+function doClone(e, name) {
+  e.preventDefault();
+  const newName = document.getElementById('clone-name').value;
+  closeModal();
+  fetch('/vm/clone', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+    body: JSON.stringify({ name, new_name: newName }),
+  }).then(r => r.json().then(d => ({ ok: r.ok, data: d }))).then(({ ok, data }) => {
+    if (!ok) { showToast(data.detail?.message || 'Clone failed'); return; }
+    showToast('Cloned as ' + newName);
+    loadVMs();
+  }).catch(() => showToast('Error'));
+  return false;
 }
 
 function loadDetailSnapshots(name, body) {

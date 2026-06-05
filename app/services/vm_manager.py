@@ -162,6 +162,19 @@ def reset_vm(req: VMActionRequest) -> None:
             libvirt_driver.close(conn)
 
 
+def set_vm_autostart(name: str, enable: bool, host_uri: str = None) -> bool:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        dom = conn.lookupByName(name)
+        dom.setAutostart(1 if enable else 0)
+        logger.info("VM '%s' autostart set to %s", name, enable)
+        return enable
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
 def delete_vm(req: VMActionRequest) -> None:
     host = req.host_uri or settings.default_host_uri
     conn = libvirt_driver.connect(host)
@@ -221,26 +234,82 @@ def get_vm_info(name: str, host_uri: str = None) -> Optional[dict]:
         active = dom.isActive()
         state = "running" if active == 1 else "stopped"
         ip = network.get_vm_ip(conn, name) if active == 1 else None
-
+        info = dom.info()
         xml = libvirt_driver.get_domain_xml(conn, name, 0)
-        info = {
+        result = {
             "name": name,
+            "uuid": dom.UUIDString(),
             "state": state,
             "ip_address": ip,
+            "autostart": dom.autostart() == 1,
+            "uptime_seconds": info[4] / 1e9 if active else None,
+            "max_memory_mb": info[1] // 1024,
+            "cpu_time_s": round(info[4] / 1e9, 3) if active else 0,
         }
         if xml:
             import re
             m = re.search(r"<memory unit='MiB'>(\d+)</memory>", xml)
             if m:
-                info["memory_mb"] = int(m.group(1))
+                result["memory_mb"] = int(m.group(1))
             else:
                 m = re.search(r"<memory unit='KiB'>(\d+)</memory>", xml)
                 if m:
-                    info["memory_mb"] = int(m.group(1)) // 1024
+                    result["memory_mb"] = int(m.group(1)) // 1024
             m = re.search(r"<vcpu(?: placement='static')?>(\d+)</vcpu>", xml)
             if m:
-                info["cpu"] = int(m.group(1))
-        return info
+                result["cpu"] = int(m.group(1))
+
+            # OS / loader
+            os_match = re.search(r"<os>.*?<type\s+(?:arch='[^']*'\s+)?machine='[^']*'>(\w+)</type>", xml, re.DOTALL)
+            if os_match:
+                result["os_type"] = os_match.group(1)
+            loader_match = re.search(r"<loader[^>]*>([^<]+)</loader>", xml)
+            if loader_match:
+                result["loader"] = loader_match.group(1)
+
+            # Disks
+            disks = []
+            for disk_m in re.finditer(
+                r"<disk\s+type='([^']+)'\s+device='([^']+)'>(.*?)</disk>",
+                xml, re.DOTALL,
+            ):
+                d = {"type": disk_m.group(1), "device": disk_m.group(2)}
+                body = disk_m.group(3)
+                src = re.search(r"<source\s+(?:file|dev|name)='([^']+)'", body)
+                if src:
+                    d["source"] = src.group(1)
+                target = re.search(r"<target\s+dev='([^']+)'", body)
+                if target:
+                    d["target"] = target.group(1)
+                readonly = re.search(r"<readonly", body)
+                if readonly:
+                    d["readonly"] = True
+                disks.append(d)
+            result["disks"] = disks
+
+            # Network interfaces
+            nets = []
+            for net_m in re.finditer(r"<interface\s+type='([^']+)'>(.*?)</interface>", xml, re.DOTALL):
+                n = {"type": net_m.group(1)}
+                body = net_m.group(2)
+                mac = re.search(r"<mac\s+address='([^']+)'", body)
+                if mac:
+                    n["mac"] = mac.group(1)
+                source = re.search(r"<source\s+(?:network|bridge)='([^']+)'", body)
+                if source:
+                    n["source"] = source.group(1)
+                model = re.search(r"<model\s+type='([^']+)'", body)
+                if model:
+                    n["model"] = model.group(1)
+                nets.append(n)
+            result["interfaces"] = nets
+
+            # VNC
+            vnc = re.search(r"<graphics\s+type='vnc'\s+port='(\d+)'", xml)
+            if vnc:
+                result["vnc_port"] = int(vnc.group(1))
+
+        return result
     finally:
         if conn is not None:
             libvirt_driver.close(conn)

@@ -11,7 +11,22 @@ def get_host_info() -> dict:
         "cpu": _get_cpu_info(),
         "memory": _get_memory_info(),
         "storage": _get_storage_info(),
+        "uptime": _get_uptime(),
     }
+
+
+def _get_uptime() -> str:
+    try:
+        with open("/proc/uptime") as f:
+            up = float(f.read().split()[0])
+        days = int(up // 86400)
+        hours = int((up % 86400) // 3600)
+        mins = int((up % 3600) // 60)
+        if days:
+            return f"{days}d {hours}h {mins}m"
+        return f"{hours}h {mins}m"
+    except Exception:
+        return None
 
 
 def get_host_stats() -> dict:

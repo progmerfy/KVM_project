@@ -44,6 +44,7 @@ from app.services.vm_manager import (
     restore_vm,
     get_metrics,
     authorize_vm_access,
+    set_vm_autostart,
 )
 from app.errors import ServiceError
 from app.api.vnc import router as vnc_router
@@ -92,6 +93,14 @@ def api_reset_vm(req: VMActionRequest, current_user: dict = Depends(get_current_
         raise ServiceError("Access denied", code="FORBIDDEN", http_status=403)
     reset_vm(req)
     return {"status": "ok"}
+
+
+@router.post("/autostart")
+def api_vm_autostart(name: str, enable: bool, current_user: dict = Depends(get_current_user), host_uri: str = None):
+    if not authorize_vm_access(name, current_user):
+        raise ServiceError("Access denied", code="FORBIDDEN", http_status=403)
+    result = set_vm_autostart(name, enable, host_uri)
+    return {"status": "ok", "autostart": result}
 
 
 @router.delete("/delete")
