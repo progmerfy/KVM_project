@@ -1,16 +1,20 @@
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/usr/lib/python3/dist-packages
 
 WORKDIR /app
 
-# Install system dependencies required for libvirt-python and qemu-img
+# Install system dependencies
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
     build-essential \
     libvirt-dev \
     libvirt-clients \
+    python3-libvirt \
     qemu-utils \
+    genisoimage \
+    curl \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 

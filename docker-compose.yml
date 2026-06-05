@@ -3,7 +3,12 @@ services:
     build: .
     container_name: kvm-mgr-app
     volumes:
-      - ./:/app:rw
+      # Mount code but exclude root-level libvirt.py stub (if any)
+      - ./app:/app/app:rw
+      - ./docs:/app/docs:ro
+      - ./tests:/app/tests:rw
+      - /var/run/libvirt:/var/run/libvirt:rw
+      - /var/lib/libvirt/images:/var/lib/libvirt/images:rw
     ports:
       - "8000:8000"
     environment:
@@ -14,9 +19,11 @@ services:
     build: .
     container_name: kvm-mgr-tests
     volumes:
-      - ./:/app:rw
+      - ./app:/app/app:rw
+      - ./docs:/app/docs:ro
+      - ./tests:/app/tests:rw
     depends_on:
       - app
     environment:
       - DEFAULT_HOST_URI=qemu:///system
-    entrypoint: ["pytest", "-q"]
+    entrypoint: ["pytest", "-v"]

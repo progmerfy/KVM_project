@@ -9,4 +9,6 @@ class VMSpec(BaseModel):
     disk_gb: int
     image: str
     disk_path: Optional[str] = None
-    network_bridge: Optional[str] = "virbr0"
+    iso_path: Optional[str] = None
+    cloud_init_iso: Optional[str] = None
+    network: Optional[str] = "default"
