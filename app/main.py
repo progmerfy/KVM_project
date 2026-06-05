@@ -384,24 +384,79 @@ function loadVMs(e) {
   if (e) e.preventDefault();
   const main = document.getElementById('main-content');
   main.innerHTML = '<div style="text-align:center;padding:80px 0"><div class="spinner"></div></div>';
-  api('/host/info').then(h => {
-    api('/vm/list').then(data => {
-      const vms = data.vms || [];
-      const running = vms.filter(v => v.state === 'running').length;
-      const stopped = vms.filter(v => v.state === 'stopped').length;
-      main.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <h1>Virtual Machines</h1>
-          <button class="btn btn-primary" onclick="showCreateDialog()">+ New VM</button>
+  Promise.all([
+    api('/host/info').catch(() => ({})),
+    api('/host/stats').catch(() => ({})),
+    api('/images/storage/info').catch(() => ({})),
+    api('/vm/list').catch(() => ({ vms: [] })),
+  ]).then(([hostInfo, hostStats, imgStorage, vmData]) => {
+    const h = hostInfo.host || {};
+    const s = hostStats.stats || {};
+    const st = imgStorage.storage || {};
+    const vms = vmData.vms || [];
+    const running = vms.filter(v => v.state === 'running').length;
+    const stopped = vms.filter(v => v.state === 'stopped').length;
+    const cpu = s.cpu || {};
+    const mem = s.memory || {};
+    const disks = s.storage || [];
+    const sysDisk = disks.find(d => d.mount === '/') || disks[0] || {};
+    main.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h1>Dashboard</h1>
+        <button class="btn btn-primary" onclick="showCreateDialog()">+ New VM</button>
+      </div>
+      <p class="sub">${h.hostname || 'host'} &middot; ${h.cpu?.model || ''} &middot; ${h.cpu?.cores || '?'} cores</p>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-bottom:32px">
+        <div class="stat-card">
+          <div class="label">CPU Usage</div>
+          <div class="value" style="color:${cpu.used_percent > 80 ? 'var(--red)' : cpu.used_percent > 50 ? 'var(--yellow)' : 'var(--green)'}">${cpu.used_percent ?? '?'}%</div>
+          <div style="margin-top:8px;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${cpu.used_percent || 0}%;background:${cpu.used_percent > 80 ? 'var(--red)' : cpu.used_percent > 50 ? 'var(--yellow)' : 'var(--green)'};border-radius:3px;transition:width 0.3s"></div>
+          </div>
         </div>
-        <p class="sub">${vms.length} VM${vms.length !== 1 ? 's' : ''} on ${h.host?.hostname || 'host'}</p>
-        <div class="stats">
-          <div class="stat-card"><div class="label">Total</div><div class="value">${vms.length}</div></div>
-          <div class="stat-card"><div class="label">Running</div><div class="value green">${running}</div></div>
-          <div class="stat-card"><div class="label">Stopped</div><div class="value red">${stopped}</div></div>
+
+        <div class="stat-card">
+          <div class="label">Memory</div>
+          <div class="value" style="color:${mem.used_percent > 80 ? 'var(--red)' : mem.used_percent > 50 ? 'var(--yellow)' : 'var(--green)'}">${mem.used_percent ?? '?'}%</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">${mem.used_mb || 0} / ${mem.total_mb || 0} MB</div>
+          <div style="margin-top:8px;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${mem.used_percent || 0}%;background:${mem.used_percent > 80 ? 'var(--red)' : mem.used_percent > 50 ? 'var(--yellow)' : 'var(--green)'};border-radius:3px;transition:width 0.3s"></div>
+          </div>
         </div>
-        <div class="vm-grid">${vms.length ? vms.map(vmCard).join('') : '<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><p>No virtual machines yet. Click "+ New VM" to create one.</p></div>'}</div>`;
-    });
+
+        <div class="stat-card">
+          <div class="label">System Disk (${sysDisk.mount || '/'})</div>
+          <div class="value" style="color:${sysDisk.used_percent > 80 ? 'var(--red)' : sysDisk.used_percent > 50 ? 'var(--yellow)' : 'var(--green)'}">${sysDisk.used_percent ?? '?'}%</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">${sysDisk.used_gb || 0} / ${sysDisk.size_gb || 0} GB</div>
+          <div style="margin-top:8px;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${sysDisk.used_percent || 0}%;background:${sysDisk.used_percent > 80 ? 'var(--red)' : sysDisk.used_percent > 50 ? 'var(--yellow)' : 'var(--green)'};border-radius:3px;transition:width 0.3s"></div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="label">Image Storage</div>
+          <div class="value">${st.free_gb ?? '?'} GB</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">${st.used_gb || 0} / ${st.total_gb || 0} GB free</div>
+          <div style="margin-top:8px;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${st.total_gb ? ((st.total_gb - st.free_gb) / st.total_gb * 100) : 0}%;background:var(--accent);border-radius:3px;transition:width 0.3s"></div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="label">Virtual Machines</div>
+          <div class="value">${vms.length}</div>
+          <div style="display:flex;gap:12px;margin-top:6px;font-size:13px">
+            <span style="color:var(--green)">${running} running</span>
+            <span style="color:var(--red)">${stopped} stopped</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h2 style="font-size:18px;font-weight:600">Virtual Machines</h2>
+      </div>
+      <div class="vm-grid">${vms.length ? vms.map(vmCard).join('') : '<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><p>No virtual machines yet</p></div>'}</div>`;
   }).catch(() => { main.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load. Check your connection.</div>'; });
   return false;
 }
