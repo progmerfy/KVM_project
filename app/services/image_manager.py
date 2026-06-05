@@ -14,15 +14,73 @@ SUPPORTED_EXTENSIONS = {".qcow2", ".img", ".iso", ".raw"}
 CLOUD_IMAGES = {
     "ubuntu-24.04": {
         "url": "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img",
-        "description": "Ubuntu Server 24.04 LTS (Noble) cloud image",
+        "description": "Ubuntu Server 24.04 LTS (Noble)",
+        "family": "debian",
     },
     "ubuntu-22.04": {
         "url": "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img",
-        "description": "Ubuntu Server 22.04 LTS (Jammy) cloud image",
+        "description": "Ubuntu Server 22.04 LTS (Jammy)",
+        "family": "debian",
+    },
+    "ubuntu-20.04": {
+        "url": "https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img",
+        "description": "Ubuntu Server 20.04 LTS (Focal)",
+        "family": "debian",
     },
     "debian-12": {
         "url": "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2",
-        "description": "Debian 12 (Bookworm) cloud image",
+        "description": "Debian 12 (Bookworm)",
+        "family": "debian",
+    },
+    "debian-11": {
+        "url": "https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-generic-amd64.qcow2",
+        "description": "Debian 11 (Bullseye)",
+        "family": "debian",
+    },
+    "fedora-40": {
+        "url": "https://download.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/x86_64/images/Fedora-Cloud-Base-40-1.14.x86_64.qcow2",
+        "description": "Fedora 40 Cloud",
+        "family": "rhel",
+    },
+    "fedora-39": {
+        "url": "https://download.fedoraproject.org/pub/fedora/linux/releases/39/Cloud/x86_64/images/Fedora-Cloud-Base-39-1.5.x86_64.qcow2",
+        "description": "Fedora 39 Cloud",
+        "family": "rhel",
+    },
+    "centos-stream-9": {
+        "url": "https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2",
+        "description": "CentOS Stream 9",
+        "family": "rhel",
+    },
+    "centos-stream-8": {
+        "url": "https://cloud.centos.org/centos/8-stream/x86_64/images/CentOS-Stream-GenericCloud-8-latest.x86_64.qcow2",
+        "description": "CentOS Stream 8",
+        "family": "rhel",
+    },
+    "rocky-9": {
+        "url": "https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2",
+        "description": "Rocky Linux 9",
+        "family": "rhel",
+    },
+    "rocky-8": {
+        "url": "https://dl.rockylinux.org/pub/rocky/8/images/x86_64/Rocky-8-GenericCloud.latest.x86_64.qcow2",
+        "description": "Rocky Linux 8",
+        "family": "rhel",
+    },
+    "almalinux-9": {
+        "url": "https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2",
+        "description": "AlmaLinux 9",
+        "family": "rhel",
+    },
+    "almalinux-8": {
+        "url": "https://repo.almalinux.org/almalinux/8/cloud/x86_64/images/AlmaLinux-8-GenericCloud-latest.x86_64.qcow2",
+        "description": "AlmaLinux 8",
+        "family": "rhel",
+    },
+    "arch": {
+        "url": "https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2",
+        "description": "Arch Linux Cloud",
+        "family": "arch",
     },
 }
 
@@ -135,3 +193,17 @@ def list_cloud_images() -> dict:
         name: {"url": info["url"], "description": info["description"]}
         for name, info in CLOUD_IMAGES.items()
     }
+
+
+def list_repo_images() -> dict:
+    families = {}
+    for name, info in CLOUD_IMAGES.items():
+        fam = info.get("family", "other")
+        if fam not in families:
+            families[fam] = []
+        families[fam].append({
+            "name": name,
+            "url": info["url"],
+            "description": info["description"],
+        })
+    return families

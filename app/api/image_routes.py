@@ -29,6 +29,11 @@ def api_list_cloud_images():
     return {"status": "ok", "cloud_images": image_manager.list_cloud_images()}
 
 
+@router.get("/repo/list")
+def api_list_repo_images():
+    return {"status": "ok", "families": image_manager.list_repo_images()}
+
+
 @router.post("/download-cloud")
 def api_download_cloud_image(name: str):
     img = image_manager.download_cloud_image(name)

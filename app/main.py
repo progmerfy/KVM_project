@@ -278,6 +278,7 @@ _APP_HTML = """<!DOCTYPE html>
       </a>
       <div class="submenu" id="iso-submenu">
         <a href="#" onclick="return loadISOs(event)">Browse Images</a>
+        <a href="#" onclick="return loadRepoImages(event)">Repo Images</a>
         <a href="#" onclick="return showUploadIsoDialog()">Upload ISO</a>
         <a href="#" onclick="return showDownloadIsoDialog()">Download from URL</a>
       </div>
@@ -518,6 +519,44 @@ function loadISOs() {
       </div>
       ${disks.length ? `<h2 style="font-size:16px;margin:24px 0 12px">Disk Images</h2><div class="vm-grid">${disks.map(isoCard).join('')}</div>` : ''}`;
   }).catch(() => { main.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load</div>'; });
+}
+
+function loadRepoImages() {
+  const main = document.getElementById('main-content');
+  main.innerHTML = '<div style="text-align:center;padding:80px 0"><div class="spinner"></div></div>';
+  const famLabels = { debian: 'Debian-like (Debian, Ubuntu)', rhel: 'RHEL-like (Fedora, CentOS, Rocky, Alma)', arch: 'Arch-like (Arch Linux)' };
+  api('/images/repo/list').then(data => {
+    const families = data.families || {};
+    let html = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h1>Repository Images</h1>
+      </div>
+      <p class="sub">Click an image to download it to local storage</p>`;
+    for (const [fam, imgs] of Object.entries(families)) {
+      html += `<h2 style="font-size:16px;margin:20px 0 12px">${famLabels[fam] || fam}</h2><div class="vm-grid">`;
+      html += imgs.map(img => `
+        <div class="vm-card" style="cursor:pointer" onclick="downloadRepoImage('${img.name}')">
+          <div class="top"><div class="name">${img.name}</div></div>
+          <div class="info"><div class="info-item" style="grid-column:span 2">${img.description}</div></div>
+          <div class="actions" onclick="event.stopPropagation()">
+            <button class="btn btn-primary" onclick="downloadRepoImage('${img.name}')">Download</button>
+          </div>
+        </div>`).join('');
+      html += `</div>`;
+    }
+    if (!Object.keys(families).length) html += '<div class="empty"><p>No repository images available</p></div>';
+    main.innerHTML = html;
+  }).catch(() => { main.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load repos</div>'; });
+}
+
+function downloadRepoImage(name) {
+  fetch('/images/download-cloud?name=' + encodeURIComponent(name), {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + TOKEN },
+  }).then(r => r.json().then(d => ({ ok: r.ok, data: d }))).then(({ ok, data }) => {
+    if (!ok) { showToast(data.detail?.message || 'Download failed'); return; }
+    showToast(name + ' downloaded');
+  }).catch(() => showToast('Download error'));
 }
 
 function isoCard(img) {
