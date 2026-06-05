@@ -214,6 +214,20 @@ _APP_HTML = """<!DOCTYPE html>
     .vm-grid { grid-template-columns: 1fr; }
     .detail-grid { grid-template-columns: 1fr; }
   }
+  .create-form { max-width: 520px; }
+  .create-form label { display: block; margin-bottom: 6px; font-size: 13px; color: #71717a; }
+  .create-form label .opt { color: #52525b; font-style: italic; }
+  .create-form input, .create-form select, .create-form textarea {
+    width: 100%; padding: 10px 12px; margin-bottom: 16px;
+    background: #0a0a0f; border: 1px solid #1e1e32; border-radius: 6px;
+    color: #fff; font-size: 14px; font-family: inherit;
+  }
+  .create-form select { cursor: pointer; }
+  .create-form select option { background: #12121a; }
+  .create-form textarea { resize: vertical; }
+  .create-form input:focus, .create-form select:focus, .create-form textarea:focus { outline: none; border-color: #60a5fa; }
+  .create-form .form-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  @media (max-width: 480px) { .create-form .form-row { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -227,6 +241,10 @@ _APP_HTML = """<!DOCTYPE html>
       <a href="/" class="active" onclick="return loadVMs(event)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>
         Virtual Machines
+      </a>
+      <a href="#" onclick="return loadCreateVM(event)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        New VM
       </a>
       <a href="#" onclick="return showToast('Coming soon')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -259,6 +277,10 @@ function showToast(msg) {
   el.textContent = msg; el.style.opacity = '1';
   setTimeout(() => el.style.opacity = '0', 2000);
   return false;
+}
+
+function sidebarActive(idx) {
+  document.querySelectorAll('.sidebar nav a').forEach((a, i) => a.classList.toggle('active', i === idx));
 }
 
 function logout() {
@@ -300,6 +322,7 @@ function vmAction(name, action) {
 
 function loadVMs(e) {
   if (e) e.preventDefault();
+  sidebarActive(0);
   const main = document.getElementById('main-content');
   main.innerHTML = '<div style="text-align:center;padding:80px 0"><div class="spinner"></div></div>';
   api('/host/info').then(h => {
@@ -355,6 +378,87 @@ function loadDetail(name) {
         </div>
       </div>`;
   }).catch(() => { main.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load VM details</div>'; });
+}
+
+function loadCreateVM(e) {
+  if (e) e.preventDefault();
+  sidebarActive(1);
+  const main = document.getElementById('main-content');
+  api('/images/list').then(images => {
+    const imgs = images.images || [];
+    const opts = imgs.length ? imgs.map(i => `<option value="${i.path}">${i.name || i.path}</option>`).join('') : '<option value="">No images available</option>';
+    main.innerHTML = `
+      <div class="detail-header">
+        <a href="/" class="back" onclick="return loadVMs(event)">← Back to VMs</a>
+        <h1>New Virtual Machine</h1>
+        <p class="sub">Fill in the details to create a new VM</p>
+      </div>
+      <div class="create-form">
+        <form id="create-vm-form" onsubmit="return createVM(event)">
+          <label for="vm-name">Name</label>
+          <input type="text" id="vm-name" placeholder="my-vm" required>
+
+          <label for="vm-image">Base Image</label>
+          <select id="vm-image" required>${opts}</select>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="vm-cpu">CPU Cores</label>
+              <input type="number" id="vm-cpu" value="1" min="1" max="64">
+            </div>
+            <div class="form-group">
+              <label for="vm-ram">Memory (MB)</label>
+              <input type="number" id="vm-ram" value="512" min="128" step="128">
+            </div>
+            <div class="form-group">
+              <label for="vm-disk">Disk (GB)</label>
+              <input type="number" id="vm-disk" value="10" min="1">
+            </div>
+          </div>
+
+          <label for="vm-iso">ISO Path <span class="opt">(optional)</span></label>
+          <input type="text" id="vm-iso" placeholder="/iso/ubuntu.iso">
+
+          <label for="vm-ssh">SSH Public Key <span class="opt">(optional)</span></label>
+          <textarea id="vm-ssh" placeholder="ssh-rsa AAAAB3..." rows="2"></textarea>
+
+          <label for="vm-user">Cloud-init User <span class="opt">(optional, default: root)</span></label>
+          <input type="text" id="vm-user" placeholder="root">
+
+          <button type="submit" class="btn btn-primary" style="width:100%;margin-top:8px">Create VM</button>
+        </form>
+      </div>`;
+  }).catch(() => { main.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load images</div>'; });
+  return false;
+}
+
+function createVM(e) {
+  e.preventDefault();
+  const btn = e.target.querySelector('button');
+  btn.disabled = true; btn.textContent = 'Creating...';
+  const body = {
+    name: document.getElementById('vm-name').value,
+    image: document.getElementById('vm-image').value,
+    cpu: parseInt(document.getElementById('vm-cpu').value) || 1,
+    memory_mb: parseInt(document.getElementById('vm-ram').value) || 512,
+    disk_gb: parseInt(document.getElementById('vm-disk').value) || 10,
+  };
+  const iso = document.getElementById('vm-iso').value;
+  if (iso) body.iso_path = iso;
+  const ssh = document.getElementById('vm-ssh').value;
+  if (ssh) body.cloud_init_ssh_key = ssh;
+  const user = document.getElementById('vm-user').value;
+  if (user) body.cloud_init_user = user;
+  fetch('/vm/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+    body: JSON.stringify(body),
+  }).then(r => r.json().then(d => ({ ok: r.ok, data: d }))).then(({ ok, data }) => {
+    if (!ok) { showToast(data.detail?.message || 'Failed'); btn.disabled = false; btn.textContent = 'Create VM'; return; }
+    showToast('VM ' + body.name + ' created');
+    loadVMs();
+  }).catch(() => { showToast('Error'); btn.disabled = false; btn.textContent = 'Create VM'; });
+  return false;
 }
 
 function init() {
