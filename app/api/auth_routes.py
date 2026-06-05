@@ -41,28 +41,6 @@ def login_page(redirect: str = "/"):
     return HTMLResponse(content=_LOGIN_PAGE_HTML.format(redirect=redirect))
 
 
-@router.post("/login", response_model=TokenResponse)
-def login(req: LoginRequest):
-    try:
-        user = get_user_by_login(req.username)
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    if not user or not verify_password(req.password, user["password_hash"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-        )
-    token = create_access_token({"sub": user["username"], "user_id": user["id"]})
-    logger.info("User '%s' logged in via '%s'", user["username"], req.username)
-    return TokenResponse(access_token=token)
-
-
-@router.get("/register-page", response_class=HTMLResponse)
-def register_page():
-    return HTMLResponse(content=_REGISTER_PAGE_HTML)
-
-
 @router.get("/verify")
 def verify(auth: dict = Depends(require_auth)):
     return {"status": "ok", "user": auth.get("sub"), "user_id": auth.get("user_id")}
@@ -117,23 +95,33 @@ def me(current_user: dict = Depends(get_current_user)):
     }
 
 
-_REGISTER_PAGE_HTML = """<!DOCTYPE html>
+_LOGIN_PAGE_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KVM Manager - Register</title>
+<title>KVM Manager</title>
 <style>
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
     background: #0a0a0f; color: #e4e4e7; font-family: 'Inter', system-ui, sans-serif;
     display: flex; justify-content: center; align-items: center; height: 100vh;
   }}
-  .register-box {{
+  .box {{
     background: #12121a; padding: 40px; border-radius: 10px; width: 360px;
     border: 1px solid #1e1e32;
   }}
   h1 {{ font-size: 20px; margin-bottom: 24px; color: #fff; text-align: center; }}
+  .tabs {{ display: flex; margin-bottom: 24px; border-bottom: 1px solid #1e1e32; }}
+  .tab {{
+    flex: 1; padding: 10px; text-align: center; cursor: pointer;
+    font-size: 14px; font-weight: 500; color: #71717a; transition: all 0.15s;
+    border-bottom: 2px solid transparent;
+  }}
+  .tab.active {{ color: #60a5fa; border-bottom-color: #60a5fa; }}
+  .tab:hover {{ color: #e4e4e7; }}
+  .form {{ display: none; }}
+  .form.active {{ display: block; }}
   label {{ display: block; margin-bottom: 6px; font-size: 13px; color: #71717a; }}
   input {{
     width: 100%; padding: 10px 12px; margin-bottom: 16px;
@@ -147,34 +135,75 @@ _REGISTER_PAGE_HTML = """<!DOCTYPE html>
     cursor: pointer; font-family: inherit;
   }}
   button:hover {{ opacity: 0.9; }}
-  .error {{ color: #ef4444; font-size: 13px; margin-bottom: 12px; display: none; text-align: center; }}
-  .success {{ color: #22c55e; font-size: 13px; margin-bottom: 12px; display: none; text-align: center; }}
+  .msg {{ font-size: 13px; margin-bottom: 12px; display: none; text-align: center; }}
+  .msg.error {{ color: #ef4444; }}
+  .msg.ok {{ color: #22c55e; }}
 </style>
 </head>
 <body>
-<div class="register-box">
-  <h1>Create Account</h1>
-  <div class="error" id="error">Registration failed</div>
-  <div class="success" id="success">Account created! Redirecting...</div>
-  <form id="register-form">
-    <label for="username">Username</label>
-    <input type="text" id="username" placeholder="myuser" autocomplete="username" required>
-    <label for="email">Email <span style="color:#71717a">(optional)</span></label>
-    <input type="email" id="email" placeholder="user@example.com" autocomplete="email">
-    <label for="password">Password</label>
-    <input type="password" id="password" placeholder="min 4 chars" autocomplete="new-password" required>
+<div class="box">
+  <h1>KVM Manager</h1>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('login')">Sign In</div>
+    <div class="tab" onclick="switchTab('register')">Register</div>
+  </div>
+  <div class="msg error" id="error"></div>
+  <div class="msg ok" id="success"></div>
+  <form id="login-form" class="form active">
+    <label for="login-user">Email or Username</label>
+    <input type="text" id="login-user" value="admin" autocomplete="username" placeholder="admin@localhost">
+    <label for="login-pass">Password</label>
+    <input type="password" id="login-pass" value="admin" autocomplete="current-password">
+    <button type="submit">Sign In</button>
+  </form>
+  <form id="register-form" class="form">
+    <label for="reg-user">Username</label>
+    <input type="text" id="reg-user" placeholder="myuser" autocomplete="username" required>
+    <label for="reg-email">Email <span style="color:#71717a">(optional)</span></label>
+    <input type="email" id="reg-email" placeholder="user@example.com" autocomplete="email">
+    <label for="reg-pass">Password</label>
+    <input type="password" id="reg-pass" placeholder="min 4 chars" autocomplete="new-password" required>
     <button type="submit">Create Account</button>
-    <p style="text-align:center;margin-top:16px;font-size:13px;color:#71717a">
-      Already have an account? <a href="/auth/login-page" style="color:#60a5fa;text-decoration:none">Sign in</a>
-    </p>
   </form>
 </div>
 <script>
+function switchTab(name) {{
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.form').forEach(f => f.classList.remove('active'));
+  document.querySelector('.tab[onclick="switchTab(\''+name+'\')"]').classList.add('active');
+  document.getElementById(name+'-form').classList.add('active');
+  document.getElementById('error').style.display = 'none';
+  document.getElementById('success').style.display = 'none';
+}}
+
+document.getElementById('login-form').addEventListener('submit', async (e) => {{
+  e.preventDefault();
+  const username = document.getElementById('login-user').value;
+  const password = document.getElementById('login-pass').value;
+  const errEl = document.getElementById('error');
+  errEl.style.display = 'none';
+  try {{
+    const resp = await fetch('/auth/login', {{
+      method: 'POST',
+      headers: {{ 'Content-Type': 'application/json' }},
+      body: JSON.stringify({{ username, password }}),
+    }});
+    if (!resp.ok) {{ errEl.textContent = 'Invalid credentials'; errEl.style.display = 'block'; return; }}
+    const data = await resp.json();
+    localStorage.setItem('token', data.access_token);
+    const params = new URLSearchParams(location.search);
+    window.location.href = params.get('redirect') || '/';
+  }} catch(e) {{
+    errEl.textContent = 'Connection error';
+    errEl.style.display = 'block';
+  }}
+}});
+
 document.getElementById('register-form').addEventListener('submit', async (e) => {{
   e.preventDefault();
-  const username = document.getElementById('username').value;
-  const email = document.getElementById('email').value;
-  const password = document.getElementById('password').value;
+  const username = document.getElementById('reg-user').value;
+  const email = document.getElementById('reg-email').value;
+  const password = document.getElementById('reg-pass').value;
   const errEl = document.getElementById('error');
   const okEl = document.getElementById('success');
   errEl.style.display = 'none';
@@ -188,80 +217,9 @@ document.getElementById('register-form').addEventListener('submit', async (e) =>
     if (!resp.ok) {{ const d = await resp.json(); errEl.textContent = d.detail || 'Registration failed'; errEl.style.display = 'block'; return; }}
     const data = await resp.json();
     localStorage.setItem('token', data.access_token);
+    okEl.textContent = 'Account created!';
     okEl.style.display = 'block';
     setTimeout(() => window.location.href = '/', 500);
-  }} catch(e) {{
-    errEl.textContent = 'Connection error';
-    errEl.style.display = 'block';
-  }}
-}});
-</script>
-</body>
-</html>"""
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KVM Manager - Login</title>
-<style>
-  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-  body {{
-    background: #0a0a0f; color: #e4e4e7; font-family: 'Inter', system-ui, sans-serif;
-    display: flex; justify-content: center; align-items: center; height: 100vh;
-  }}
-  .login-box {{
-    background: #12121a; padding: 40px; border-radius: 10px; width: 360px;
-    border: 1px solid #1e1e32;
-  }}
-  h1 {{ font-size: 20px; margin-bottom: 24px; color: #fff; text-align: center; }}
-  label {{ display: block; margin-bottom: 6px; font-size: 13px; color: #71717a; }}
-  input {{
-    width: 100%; padding: 10px 12px; margin-bottom: 16px;
-    background: #0a0a0f; border: 1px solid #1e1e32; border-radius: 6px;
-    color: #fff; font-size: 14px; font-family: inherit;
-  }}
-  input:focus {{ outline: none; border-color: #60a5fa; }}
-  button {{
-    width: 100%; padding: 10px; background: #60a5fa; color: #000;
-    border: none; border-radius: 6px; font-size: 14px; font-weight: 600;
-    cursor: pointer; font-family: inherit;
-  }}
-  button:hover {{ opacity: 0.9; }}
-  .error {{ color: #ef4444; font-size: 13px; margin-bottom: 12px; display: none; text-align: center; }}
-</style>
-</head>
-<body>
-<div class="login-box">
-  <h1>KVM Manager</h1>
-  <div class="error" id="error">Invalid credentials</div>
-  <form id="login-form">
-    <label for="username">Email or Username</label>
-    <input type="text" id="username" value="admin" autocomplete="username" placeholder="admin@localhost">
-    <label for="password">Password</label>
-    <input type="password" id="password" value="admin" autocomplete="current-password">
-    <button type="submit">Sign In</button>
-    <p style="text-align:center;margin-top:16px;font-size:13px;color:#71717a">
-      No account? <a href="/auth/register-page" style="color:#60a5fa;text-decoration:none">Create one</a>
-    </p>
-  </form>
-</div>
-<script>
-document.getElementById('login-form').addEventListener('submit', async (e) => {{
-  e.preventDefault();
-  const username = document.getElementById('username').value;
-  const password = document.getElementById('password').value;
-  const errEl = document.getElementById('error');
-  try {{
-    const resp = await fetch('/auth/login', {{
-      method: 'POST',
-      headers: {{ 'Content-Type': 'application/json' }},
-      body: JSON.stringify({{ username, password }}),
-    }});
-    if (!resp.ok) {{ errEl.style.display = 'block'; return; }}
-    const data = await resp.json();
-    localStorage.setItem('token', data.access_token);
-    const params = new URLSearchParams(location.search);
-    window.location.href = params.get('redirect') || '/';
   }} catch(e) {{
     errEl.textContent = 'Connection error';
     errEl.style.display = 'block';
