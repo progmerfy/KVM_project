@@ -248,24 +248,21 @@ def get_vm_info(name: str, host_uri: str = None) -> Optional[dict]:
         }
         if xml:
             import re
-            m = re.search(r'<memory unit="MiB">(\d+)</memory>', xml)
+            m = re.search(r'<memory\s+unit=[\'"]MiB[\'"]>(\d+)</memory>', xml)
             if m:
                 result["memory_mb"] = int(m.group(1))
             else:
-                m = re.search(r'<memory unit="KiB">(\d+)</memory>', xml)
+                m = re.search(r'<memory\s+unit=[\'"]KiB[\'"]>(\d+)</memory>', xml)
                 if m:
                     result["memory_mb"] = int(m.group(1)) // 1024
-            m = re.search(r'<vcpu(?:\s+placement="[^"]+")?>(\d+)</vcpu>', xml)
+            m = re.search(r'<vcpu(?:\s+placement=[\'"][^\'"]+[\'"])?>(\d+)</vcpu>', xml)
             if m:
                 result["cpu"] = int(m.group(1))
 
             # OS / loader
-            os_match = re.search(r'<os>.*?<type\s+(?:arch="[^"]*"\s+)?machine="[^"]*">(\w+)</type>', xml, re.DOTALL)
+            os_match = re.search(r'<os>.*?<type\s+(?:arch=[\'"][^\'"]*[\'"]\s+)?machine=[\'"][^\'"]*[\'"]>(\w+)</type>', xml, re.DOTALL)
             if os_match:
                 result["os_type"] = os_match.group(1)
-            loader_match = re.search(r"<loader[^>]*>([^<]+)</loader>", xml)
-            if loader_match:
-                result["loader"] = loader_match.group(1)
 
             # Disks
             disks = []
@@ -275,10 +272,10 @@ def get_vm_info(name: str, host_uri: str = None) -> Optional[dict]:
             ):
                 d = {"type": disk_m.group(1), "device": disk_m.group(2)}
                 body = disk_m.group(3)
-                src = re.search(r'<source\s+(?:file|dev|name)="([^"]+)"', body)
+                src = re.search(r'<source\s+(?:file|dev|name)=\'?"?([^\'"]+)\'?"?', body)
                 if src:
                     d["source"] = src.group(1)
-                target = re.search(r'<target\s+dev="([^"]+)"', body)
+                target = re.search(r'<target\s+dev=\'?"?([^\'"]+)\'?"?', body)
                 if target:
                     d["target"] = target.group(1)
                 readonly = re.search(r"<readonly", body)
