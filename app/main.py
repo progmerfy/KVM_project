@@ -318,7 +318,7 @@ _APP_HTML = """<!DOCTYPE html>
 <body>
 <div class="layout">
   <div class="topbar">
-    <div class="breadcrumbs" id="breadcrumbs"><a href="#" onclick="return loadVMs(event)">Dashboard</a></div>
+    <div class="breadcrumbs" id="breadcrumbs"><a href="#" onclick="setHash('/');return loadVMs(event)">Dashboard</a></div>
     <div class="user-menu" id="user-menu">
       <span class="email" id="user-email">Loading...</span>
       <div class="avatar" id="user-avatar">U</div>
@@ -342,7 +342,7 @@ _APP_HTML = """<!DOCTYPE html>
         <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:auto;width:16px;height:16px;transition:transform 0.2s"><path d="m6 9 6 6 6-6"/></svg>
       </a>
       <div class="submenu" id="vm-submenu">
-        <a href="#" onclick="return loadVMs(event)">List VMs</a>
+        <a href="#" onclick="setHash('/');return loadVMs(event)">List VMs</a>
         <a href="#" onclick="return showCreateDialog()">+ Create VM</a>
       </div>
       <a href="#" onclick="return toggleIsoSubmenu(event)">
@@ -351,12 +351,12 @@ _APP_HTML = """<!DOCTYPE html>
         <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:auto;width:16px;height:16px;transition:transform 0.2s"><path d="m6 9 6 6 6-6"/></svg>
       </a>
       <div class="submenu" id="iso-submenu">
-        <a href="#" onclick="return loadISOs(event)">Browse Images</a>
-        <a href="#" onclick="return loadRepoImages(event)">Repo Images</a>
+        <a href="#" onclick="setHash('/isos');return loadISOs(event)">Browse Images</a>
+        <a href="#" onclick="setHash('/isos/repo');return loadRepoImages(event)">Repo Images</a>
         <a href="#" onclick="return showUploadIsoDialog()">Upload ISO</a>
         <a href="#" onclick="return showDownloadIsoDialog()">Download from URL</a>
       </div>
-      <a href="#" onclick="return loadSettings(event)">
+      <a href="#" onclick="setHash('/settings');return loadSettings(event)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         Settings
       </a>
@@ -448,7 +448,7 @@ function setBreadcrumbs(...crumbs) {
   const el = document.getElementById('breadcrumbs');
   el.innerHTML = crumbs.map((c, i) => {
     if (i === crumbs.length - 1) return `<span>${c}</span>`;
-    return `<a href="#" onclick="return loadVMs(event)">${c}</a> <span style="color:var(--text2)">/</span>`;
+    return `<a href="#" onclick="setHash('/');return loadVMs(event)">${c}</a> <span style="color:var(--text2)">/</span>`;
   }).join('');
 }
 
@@ -466,7 +466,7 @@ function skeletonWidgets(n) {
 }
 
 function vmCard(vm) {
-  return `<div class="vm-card" onclick="loadDetail('${vm.name}')">
+  return `<div class="vm-card" onclick="setHash('/vm/${vm.name}');loadDetail('${vm.name}')">
     <div class="top">
       <div class="name">${vm.name}</div>
       ${statusBadge(vm.state)}
@@ -651,10 +651,10 @@ function loadDetail(name) {
       <span class="skeleton" style="display:inline-block;width:200px;height:32px">&nbsp;</span>
     </div>
     <div class="tabs">
-      <div class="tab active" data-tab="config" onclick="switchDetailTab('config', '${name}')">Config</div>
-      <div class="tab" data-tab="snapshots" onclick="switchDetailTab('snapshots', '${name}')">Snapshots</div>
-      <div class="tab" data-tab="backups" onclick="switchDetailTab('backups', '${name}')">Backups</div>
-      <div class="tab" data-tab="metrics" onclick="switchDetailTab('metrics', '${name}')">Metrics</div>
+      <div class="tab active" data-tab="config" onclick="setHash('/vm/${name}/tab/config');switchDetailTab('config', '${name}')">Config</div>
+      <div class="tab" data-tab="snapshots" onclick="setHash('/vm/${name}/tab/snapshots');switchDetailTab('snapshots', '${name}')">Snapshots</div>
+      <div class="tab" data-tab="backups" onclick="setHash('/vm/${name}/tab/backups');switchDetailTab('backups', '${name}')">Backups</div>
+      <div class="tab" data-tab="metrics" onclick="setHash('/vm/${name}/tab/metrics');switchDetailTab('metrics', '${name}')">Metrics</div>
     </div>
     <div id="detail-body"><div style="text-align:center;padding:40px"><div class="spinner"></div></div></div>`;
   switchDetailTab('config', name);
@@ -1190,6 +1190,31 @@ function changePassword(e) {
   }).catch(() => { msg.style.display = 'block'; msg.style.color = 'var(--red)'; msg.textContent = 'Error'; });
 }
 
+function navigate() {
+  const hash = window.location.hash.slice(1) || '/';
+  if (hash.startsWith('/vm/')) {
+    const parts = hash.split('/');
+    const name = parts[2];
+    const tab = parts[4] || 'config';
+    if (name) { loadDetail(name); if (tab !== _detailTab) setTimeout(() => switchDetailTab(tab, name), 100); }
+  } else if (hash === '/settings') {
+    loadSettings();
+  } else if (hash === '/isos') {
+    loadISOs();
+  } else if (hash === '/isos/repo') {
+    loadRepoImages();
+  } else {
+    loadVMs();
+  }
+}
+
+function setHash(h) {
+  const url = window.location.pathname + window.location.search + '#' + h;
+  if (window.location.hash.slice(1) !== h) {
+    history.replaceState(null, '', url);
+  }
+}
+
 function init() {
   api('/auth/me').then(d => {
     const user = d.user || {};
@@ -1197,7 +1222,8 @@ function init() {
     document.getElementById('user-avatar').textContent = (user.username || 'U')[0].toUpperCase();
     document.getElementById('vm-submenu').classList.add('open');
     document.querySelector('.chevron').classList.add('rotated');
-    loadVMs();
+    navigate();
+    window.addEventListener('popstate', navigate);
   }).catch(() => { window.location.href = '/auth/login-page?redirect=/'; });
 }
 init();
