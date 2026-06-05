@@ -619,9 +619,7 @@ def list_vms(host_uri: str = None, owner_id: int = None) -> list:
                 continue
             try:
                 active = d.isActive()
-
-                state_map = {0: "nostate", 1: "running", 2: "blocked", 3: "paused", 4: "shutdown", 5: "shutoff", 6: "crashed"}  # fmt: skip
-                state = state_map.get(active, "unknown")
+                state = "running" if active else "stopped"
             except Exception:
                 state = "unknown"
             ip = network.get_vm_ip(conn, name) if state == "running" else None

@@ -350,8 +350,8 @@ function logout() {
 }
 
 function statusBadge(state) {
-  const cls = state === 'running' ? 'running' : 'stopped';
-  return `<span class="status-badge ${cls}"><span class="dot"></span>${state}</span>`;
+  const display = state === 'running' ? 'running' : 'stopped';
+  return `<span class="status-badge ${display}"><span class="dot"></span>${display}</span>`;
 }
 
 function vmCard(vm) {

@@ -431,8 +431,8 @@ def get_metrics(conn, domain_name: str) -> dict:
         dom = conn.lookupByName(domain_name)
         info = dom.info()
         state_map = {
-            0: "nostate", 1: "running", 2: "blocked",
-            3: "paused", 4: "shutdown", 5: "shutoff", 6: "crashed",
+            0: "stopped", 1: "running", 2: "blocked",
+            3: "paused", 4: "shutdown", 5: "stopped", 6: "crashed",
         }
         cpu_time_ns = info[4]
 
