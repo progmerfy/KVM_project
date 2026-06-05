@@ -639,25 +639,23 @@ function filterVMs(q) {
 
 let _detailTab = 'config';
 
-function loadDetail(name) {
+function loadDetail(name, initialTab) {
   const main = document.getElementById('main-content');
   setBreadcrumbs('Dashboard', name);
   main.innerHTML = `
     <div class="detail-header">
       <h1>${name}</h1>
-      <p class="sub"><span class="skeleton" style="display:inline-block;width:120px;height:16px">&nbsp;</span></p>
+      <p class="sub" id="detail-sub"></p>
     </div>
-    <div class="actions" style="margin-bottom:24px">
-      <span class="skeleton" style="display:inline-block;width:200px;height:32px">&nbsp;</span>
-    </div>
+    <div class="actions" id="detail-actions" style="margin-bottom:24px"></div>
     <div class="tabs">
-      <div class="tab active" data-tab="config" onclick="setHash('/vm/${name}/tab/config');switchDetailTab('config', '${name}')">Config</div>
-      <div class="tab" data-tab="snapshots" onclick="setHash('/vm/${name}/tab/snapshots');switchDetailTab('snapshots', '${name}')">Snapshots</div>
-      <div class="tab" data-tab="backups" onclick="setHash('/vm/${name}/tab/backups');switchDetailTab('backups', '${name}')">Backups</div>
-      <div class="tab" data-tab="metrics" onclick="setHash('/vm/${name}/tab/metrics');switchDetailTab('metrics', '${name}')">Metrics</div>
+      <div class="tab ${initialTab === 'config' || !initialTab ? 'active' : ''}" data-tab="config" onclick="setHash('/vm/${name}/tab/config');switchDetailTab('config', '${name}')">Config</div>
+      <div class="tab ${initialTab === 'snapshots' ? 'active' : ''}" data-tab="snapshots" onclick="setHash('/vm/${name}/tab/snapshots');switchDetailTab('snapshots', '${name}')">Snapshots</div>
+      <div class="tab ${initialTab === 'backups' ? 'active' : ''}" data-tab="backups" onclick="setHash('/vm/${name}/tab/backups');switchDetailTab('backups', '${name}')">Backups</div>
+      <div class="tab ${initialTab === 'metrics' ? 'active' : ''}" data-tab="metrics" onclick="setHash('/vm/${name}/tab/metrics');switchDetailTab('metrics', '${name}')">Metrics</div>
     </div>
     <div id="detail-body"><div style="text-align:center;padding:40px"><div class="spinner"></div></div></div>`;
-  switchDetailTab('config', name);
+  switchDetailTab(initialTab || 'config', name);
 }
 
 function switchDetailTab(tab, name) {
@@ -679,14 +677,9 @@ function loadDetailConfig(name, body) {
     const nets = vm.interfaces || [];
     const uptime = vm.uptime_seconds;
     const uptimeStr = uptime ? Math.floor(uptime / 3600) + 'h ' + Math.floor((uptime % 3600) / 60) + 'm' : '-';
+    document.getElementById('detail-sub').innerHTML = statusBadge(vm.state) + (uptime ? ' &middot; Uptime: ' + uptimeStr : '');
+    document.getElementById('detail-actions').innerHTML = (vm.state === 'running' ? `<button class="btn btn-ghost" onclick="vmAction('${vm.name}','stop')">Stop</button><button class="btn btn-ghost" onclick="vmAction('${vm.name}','reboot')">Reboot</button>` : `<button class="btn btn-primary" onclick="vmAction('${vm.name}','start')">Start</button>`) + `<button class="btn btn-primary" onclick="window.location.href='/vm/vnc/console/${vm.name}'">Console</button>`;
     body.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-        <div><p class="sub">${statusBadge(vm.state)} ${uptime ? '&middot; Uptime: ' + uptimeStr : ''}</p></div>
-        <div style="display:flex;gap:6px">
-          ${vm.state === 'running' ? `<button class="btn btn-ghost" onclick="vmAction('${vm.name}','stop')">Stop</button><button class="btn btn-ghost" onclick="vmAction('${vm.name}','reboot')">Reboot</button>` : `<button class="btn btn-primary" onclick="vmAction('${vm.name}','start')">Start</button>`}
-          <button class="btn btn-primary" onclick="window.location.href='/vm/vnc/console/${vm.name}'">Console</button>
-        </div>
-      </div>
       <div class="detail-grid">
         <div class="detail-section">
           <h3>Configuration</h3>
@@ -1196,7 +1189,7 @@ function navigate() {
     const parts = hash.split('/');
     const name = parts[2];
     const tab = parts[4] || 'config';
-    if (name) { loadDetail(name); if (tab !== _detailTab) setTimeout(() => switchDetailTab(tab, name), 100); }
+    if (name) { loadDetail(name, tab); }
   } else if (hash === '/settings') {
     loadSettings();
   } else if (hash === '/isos') {
