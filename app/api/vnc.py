@@ -1,9 +1,10 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from fastapi.responses import HTMLResponse
 
+from app.auth import verify_token
 from app.errors import ServiceError
 from app.services.vm_manager import get_vnc_info
 
@@ -12,7 +13,7 @@ router = APIRouter()
 
 
 @router.get("/console/{name}")
-async def vnc_console(name: str, host_uri: str = None):
+async def vnc_console(name: str, host_uri: str = None, token: str = Query(None)):
     info = get_vnc_info(name, host_uri)
     if info is None:
         raise ServiceError(
@@ -28,7 +29,13 @@ async def vnc_console(name: str, host_uri: str = None):
 
 
 @router.websocket("/ws/{name}")
-async def vnc_websocket(websocket: WebSocket, name: str, host_uri: str = None):
+async def vnc_websocket(websocket: WebSocket, name: str, host_uri: str = None, token: str = Query(None)):
+    if token:
+        try:
+            verify_token(token)
+        except Exception:
+            await websocket.close(code=4001, reason="Unauthorized")
+            return
     await websocket.accept()
 
     info = get_vnc_info(name, host_uri)
@@ -139,9 +146,16 @@ def _render_console_html(name: str) -> str:
 <div class="hint">Ctrl+Shift+V to paste</div>
 
 <script type="module">
+const TOKEN = localStorage.getItem('token');
+if (!TOKEN) {{
+  const redirect = encodeURIComponent(location.pathname + location.search);
+  window.location.href = '/auth/login-page?redirect=' + redirect;
+}}
+
 import RFB from '/static/novnc/rfb.js';
 
-const WS_URL = `${{location.protocol === 'https:' ? 'wss:' : 'ws:'}}//${{location.host}}/vm/vnc/ws/{name}`;
+const TOKEN_PARAM = TOKEN ? `?token=${{encodeURIComponent(TOKEN)}}` : '';
+const WS_URL = `${{location.protocol === 'https:' ? 'wss:' : 'ws:'}}//${{location.host}}/vm/vnc/ws/{name}${{TOKEN_PARAM}}`;
 const statusEl = document.getElementById('status');
 const toastEl = document.getElementById('toast');
 let toastTimer;

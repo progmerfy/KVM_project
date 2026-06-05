@@ -3,7 +3,7 @@ import os
 import time
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -84,6 +84,67 @@ def health_check():
 @app.get("/health/secured")
 def health_secured(auth: dict = Depends(require_auth)):
     return {"status": "ok", "user": auth.get("sub")}
+
+
+@app.get("/", response_class=HTMLResponse)
+def index():
+    return HTMLResponse(content=_INDEX_HTML)
+
+
+_INDEX_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KVM Manager</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0f0f23; color: #e0e0e0; font-family: system-ui, monospace;
+    display: flex; justify-content: center; align-items: center; height: 100vh;
+  }
+  .box { background: #1a1a2e; padding: 40px; border-radius: 8px; text-align: center; }
+  h1 { font-size: 24px; margin-bottom: 8px; }
+  p { color: #888; margin-bottom: 24px; font-size: 14px; }
+  .links { display: flex; flex-direction: column; gap: 8px; }
+  a { color: #4fc3f7; text-decoration: none; font-size: 14px; padding: 8px; border-radius: 4px; }
+  a:hover { background: #16213e; }
+  .status { margin-top: 20px; font-size: 12px; color: #555; }
+  .status.ok { color: #2ecc71; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>KVM Manager</h1>
+  <p>Virtual Machine Management API</p>
+  <div class="links" id="links">
+    <a href="/auth/login-page">Sign In</a>
+  </div>
+  <div class="status" id="status">Loading...</div>
+</div>
+<script>
+const token = localStorage.getItem('token');
+const linksEl = document.getElementById('links');
+const statusEl = document.getElementById('status');
+if (token) {
+  fetch('/health/secured', { headers: { 'Authorization': 'Bearer ' + token } })
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(d => {
+      linksEl.innerHTML = '<a href="/vm/list">VM List</a><a href="/auth/login-page">Account</a>';
+      statusEl.textContent = 'Authenticated as ' + d.user;
+      statusEl.className = 'status ok';
+    })
+    .catch(() => {
+      localStorage.removeItem('token');
+      linksEl.innerHTML = '<a href="/auth/login-page">Sign In</a>';
+      statusEl.textContent = 'Not authenticated';
+    });
+} else {
+  statusEl.textContent = 'Not authenticated';
+}
+</script>
+</body>
+</html>"""
 
 
 static_dir = os.path.join(os.path.dirname(__file__), "static")
