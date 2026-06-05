@@ -41,6 +41,23 @@ def login_page(redirect: str = "/"):
     return HTMLResponse(content=_LOGIN_PAGE_HTML.format(redirect=redirect))
 
 
+@router.post("/login", response_model=TokenResponse)
+def login(req: LoginRequest):
+    try:
+        user = get_user_by_login(req.username)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    if not user or not verify_password(req.password, user["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
+    token = create_access_token({"sub": user["username"], "user_id": user["id"]})
+    logger.info("User '%s' logged in via '%s'", user["username"], req.username)
+    return TokenResponse(access_token=token)
+
+
 @router.get("/verify")
 def verify(auth: dict = Depends(require_auth)):
     return {"status": "ok", "user": auth.get("sub"), "user_id": auth.get("user_id")}
