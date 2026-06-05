@@ -142,7 +142,14 @@ _APP_HTML = """<!DOCTYPE html>
     font-weight: 600; font-size: 12px;
   }
   .topbar .user-menu .email { color: var(--text2); }
-  .topbar .user-menu .logout { color: var(--red); cursor: pointer; text-decoration: none; font-size: 12px; }
+  .topbar .user-menu .logout {
+    color: var(--text2); cursor: pointer; text-decoration: none; font-size: 12px;
+    padding: 4px 10px; border-radius: 6px; border: 1px solid transparent;
+    transition: all 0.15s;
+  }
+  .topbar .user-menu .logout:hover {
+    color: var(--red); border-color: var(--red); background: rgba(239,68,68,0.1);
+  }
   .body-wrap { display: flex; flex: 1; }
   .sidebar {
     width: 220px; background: var(--surface);
@@ -315,7 +322,11 @@ _APP_HTML = """<!DOCTYPE html>
     <div class="user-menu" id="user-menu">
       <span class="email" id="user-email">Loading...</span>
       <div class="avatar" id="user-avatar">U</div>
-      <a href="#" class="logout" onclick="return logout()">Logout</a>
+      <span class="sep" style="width:1px;height:20px;background:var(--border)"></span>
+      <a href="#" class="logout" onclick="return logout()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Logout
+      </a>
     </div>
   </div>
   <div class="body-wrap">
