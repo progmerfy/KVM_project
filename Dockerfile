@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.13-slim AS backend
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/usr/lib/python3/dist-packages
@@ -23,6 +23,18 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY . /app
 
-EXPOSE 8000
+# ── Build React frontend ──
+FROM node:20-slim AS frontend-builder
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json* /frontend/
+RUN npm install
+COPY frontend/ /frontend/
+RUN npx vite build
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# ── Final image ──
+FROM backend
+COPY --from=frontend-builder /frontend/dist /app/app/static
+
+EXPOSE 8000 8443
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8443"]
