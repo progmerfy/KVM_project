@@ -111,10 +111,12 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 @app.exception_handler(AppError)
 async def app_error_handler(request: Request, exc: AppError):
-    return JSONResponse(
-        status_code=exc.http_status,
-        content={"detail": {"code": exc.code, "message": exc.message}},
-    )
+    detail = {"code": exc.code, "message": exc.message}
+    if exc.details:
+        detail["details"] = exc.details
+    if exc.runbook_url:
+        detail["runbook_url"] = exc.runbook_url
+    return JSONResponse(status_code=exc.http_status, content={"detail": detail})
 
 
 @app.exception_handler(Exception)
@@ -122,7 +124,7 @@ async def unhandled_error_handler(request: Request, exc: Exception):
     logger.exception("Unhandled error: %s", exc)
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal Server Error"},
+        content={"detail": {"code": "INTERNAL_ERROR", "message": "Internal Server Error", "runbook_url": "https://docs.kvm-mgr.local/runbooks/infrastructure/internal-error"}},
     )
 
 
