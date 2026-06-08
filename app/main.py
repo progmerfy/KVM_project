@@ -2,6 +2,7 @@ import logging
 import os
 import threading
 import time
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -76,6 +77,23 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup
+    init_db()
+    logger.info("Database initialized")
+    global _scheduler_thread
+    _scheduler_thread = threading.Thread(target=_backup_scheduler_loop, daemon=True)
+    _scheduler_thread.start()
+    logger.info("Backup scheduler thread started")
+    yield
+    # shutdown
+    _scheduler_stop.set()
+    if _scheduler_thread:
+        _scheduler_thread.join(timeout=5)
+    logger.info("Backup scheduler stopped")
+
+
 app = FastAPI(
     title="KVM Manager API",
     version="0.5.0",
@@ -84,25 +102,8 @@ app = FastAPI(
         "Create VMs with cloud-init SSH access, manage OS images, "
         "monitor host resources."
     ),
+    lifespan=lifespan,
 )
-
-
-@app.on_event("startup")
-def on_startup():
-    init_db()
-    logger.info("Database initialized")
-    global _scheduler_thread
-    _scheduler_thread = threading.Thread(target=_backup_scheduler_loop, daemon=True)
-    _scheduler_thread.start()
-    logger.info("Backup scheduler thread started")
-
-
-@app.on_event("shutdown")
-def on_shutdown():
-    _scheduler_stop.set()
-    if _scheduler_thread:
-        _scheduler_thread.join(timeout=5)
-    logger.info("Backup scheduler stopped")
 
 app.add_middleware(RequestLogMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)

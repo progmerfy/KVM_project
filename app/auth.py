@@ -14,7 +14,14 @@ try:
 except ImportError:
     pyjwt = None
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-in-production")
+_DEFAULT_KEY = None
+try:
+    import secrets
+    _DEFAULT_KEY = secrets.token_hex(32)  # 64 hex chars = 32 bytes
+except Exception:
+    _DEFAULT_KEY = "CHANGE-ME-IN-PRODUCTION-MUST-BE-AT-LEAST-32-BYTES!!"
+
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", _DEFAULT_KEY)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))
 
