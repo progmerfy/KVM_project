@@ -534,6 +534,33 @@ def network_leases(conn) -> list[dict]:
         raise LibvirtError(f"failed to list network leases: {e}")
 
 
+def guest_agent_ip(conn, domain_name: str) -> Optional[str]:
+    """Query qemu-guest-agent for the guest IP address.
+    Returns the first IPv4 address found, or None if guest agent is
+    unavailable / not running.
+    """
+    _check_libvirt()
+    try:
+        dom = conn.lookupByName(domain_name)
+        if dom.isActive() != 1:
+            return None
+        try:
+            addresses = dom.interfaceAddresses(libvirt.VIR_DOMAIN_INTERFACE_ADDRESSES_SOURCE_AGENT)
+        except AttributeError:
+            return None
+        except libvirt.libvirtError:
+            return None
+        for iface in addresses:
+            for addr in iface.get("addrs", []):
+                if addr.get("type") == libvirt.VIR_IP_ADDR_TYPE_IPV4:
+                    ip = addr.get("addr")
+                    if ip and ip != "127.0.0.1":
+                        return ip
+        return None
+    except libvirt.libvirtError:
+        return None
+
+
 def close(conn) -> None:
     try:
         conn.close()

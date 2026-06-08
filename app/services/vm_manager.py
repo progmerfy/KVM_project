@@ -237,6 +237,7 @@ def get_vm_info(name: str, host_uri: str = None) -> Optional[dict]:
         active = dom.isActive()
         state = "running" if active == 1 else "stopped"
         ip = network.get_vm_ip(conn, name) if active == 1 else None
+        g_ip = libvirt_driver.guest_agent_ip(conn, name) if active == 1 else None
         info = dom.info()
         xml = libvirt_driver.get_domain_xml(conn, name, 0)
         result = {
@@ -244,6 +245,7 @@ def get_vm_info(name: str, host_uri: str = None) -> Optional[dict]:
             "uuid": dom.UUIDString(),
             "state": state,
             "ip_address": ip,
+            "guest_ip": g_ip,
             "autostart": dom.autostart() == 1,
             "uptime_seconds": info[4] / 1e9 if active else None,
             "max_memory_mb": info[1] // 1024,
@@ -730,7 +732,8 @@ def list_vms(host_uri: str = None, owner_id: int = None) -> list:
             except Exception:
                 state = "unknown"
             ip = network.get_vm_ip(conn, name) if state == "running" else None
-            result.append({"name": name, "state": state, "ip_address": ip})
+            g_ip = libvirt_driver.guest_agent_ip(conn, name) if state == "running" else None
+            result.append({"name": name, "state": state, "ip_address": ip, "guest_ip": g_ip})
         return result
     finally:
         if conn is not None:
@@ -846,6 +849,9 @@ def _render_domain_xml(spec: VMSpec) -> str:
     <video>
       <model type='virtio' heads='1' primary='yes'/>
     </video>
+    <channel type='unix'>
+      <target type='virtio' name='org.qemu.guest_agent.0'/>
+    </channel>
     <serial type='pty'>
       <target port='0'/>
     </serial>
