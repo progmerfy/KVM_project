@@ -34,6 +34,7 @@ export interface AuditLog { id: number; user_id?: number; username: string; acti
 
 export interface Image { name: string; path?: string; format?: string; actual_size_bytes?: number; virtual_size_gb?: number; }
 
-export interface RepoFamilies { [family: string]: { name: string; description: string }[]; }
+export interface RepoImage { name: string; description: string; url?: string; type?: string; is_iso?: boolean; }
+export interface RepoFamilies { [family: string]: RepoImage[]; }
 
 export interface Metrics { state?: string; max_memory_mb?: number; memory_mb?: number; cpu_count?: number; cpu_time_ns?: number; cpu_time_s?: number; memory_stats?: { available?: number; unused?: number }; block_stats?: { [dev: string]: { rd_req: number; rd_bytes: number; wr_req: number; wr_bytes: number } }; }

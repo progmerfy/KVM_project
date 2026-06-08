@@ -11,6 +11,39 @@ from app.models.image import ImageInfo
 logger = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {".qcow2", ".img", ".iso", ".raw"}
+ISO_REPO = {
+    "ubuntu-24.04-server": {
+        "url": "https://releases.ubuntu.com/24.04/ubuntu-24.04.1-live-server-amd64.iso",
+        "description": "Ubuntu Server 24.04 LTS ISO",
+        "family": "debian",
+    },
+    "ubuntu-22.04-server": {
+        "url": "https://releases.ubuntu.com/22.04/ubuntu-22.04.5-live-server-amd64.iso",
+        "description": "Ubuntu Server 22.04 LTS ISO",
+        "family": "debian",
+    },
+    "debian-12-netinst": {
+        "url": "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.10.0-amd64-netinst.iso",
+        "description": "Debian 12 Bookworm Net Install ISO",
+        "family": "debian",
+    },
+    "fedora-41-server": {
+        "url": "https://download.fedoraproject.org/pub/fedora/linux/releases/41/Server/x86_64/iso/Fedora-Server-dvd-x86_64-41-1.4.iso",
+        "description": "Fedora 41 Server DVD ISO",
+        "family": "rhel",
+    },
+    "centos-stream-9-iso": {
+        "url": "https://mirror.bytemark.co.uk/centos-stream/9-stream/BaseOS/x86_64/iso/CentOS-Stream-9-latest-x86_64-dvd1.iso",
+        "description": "CentOS Stream 9 DVD ISO",
+        "family": "rhel",
+    },
+    "rocky-9-iso": {
+        "url": "https://dl.rockylinux.org/pub/rocky/9/isos/x86_64/Rocky-9.5-x86_64-minimal.iso",
+        "description": "Rocky Linux 9 Minimal ISO",
+        "family": "rhel",
+    },
+}
+
 CLOUD_IMAGES = {
     "ubuntu-24.04": {
         "url": "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img",
@@ -168,6 +201,49 @@ def download_cloud_image(name: str) -> ImageInfo:
     return info
 
 
+def download_repo_iso(name: str) -> ImageInfo:
+    if name not in ISO_REPO:
+        raise ServiceError(
+            f"unknown repo ISO '{name}'. Available: {list(ISO_REPO.keys())}",
+            code="REPO_ISO_NOT_FOUND",
+            http_status=404,
+        )
+
+    image_dir = _get_image_dir()
+    ri = ISO_REPO[name]
+    filename = os.path.basename(ri["url"])
+    dest = os.path.join(image_dir, filename)
+
+    if os.path.isfile(dest):
+        logger.info("ISO already exists: %s", dest)
+        info = _get_image_info(dest)
+        if info:
+            return info
+
+    logger.info("Downloading repo ISO %s from %s", name, ri["url"])
+    try:
+        subprocess.check_call(
+            ["curl", "-L", "-o", dest, ri["url"]],
+            timeout=600,
+        )
+        logger.info("Downloaded repo ISO: %s", dest)
+    except Exception as e:
+        raise ServiceError(
+            f"failed to download repo ISO '{name}': {e}",
+            code="DOWNLOAD_FAILED",
+            http_status=500,
+        )
+
+    info = _get_image_info(dest)
+    if not info:
+        raise ServiceError(
+            f"downloaded file is not a valid image: {dest}",
+            code="INVALID_IMAGE",
+            http_status=500,
+        )
+    return info
+
+
 def _get_image_info(fpath: str) -> Optional[ImageInfo]:
     try:
         output = subprocess.check_output(
@@ -205,5 +281,18 @@ def list_repo_images() -> dict:
             "name": name,
             "url": info["url"],
             "description": info["description"],
+            "type": "cloud",
+            "is_iso": False,
+        })
+    for name, info in ISO_REPO.items():
+        fam = info.get("family", "other")
+        if fam not in families:
+            families[fam] = []
+        families[fam].append({
+            "name": name,
+            "url": info["url"],
+            "description": info["description"],
+            "type": "iso",
+            "is_iso": True,
         })
     return families

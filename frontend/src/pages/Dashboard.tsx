@@ -3,7 +3,7 @@ import { User, VM, HostInfo, HostStats, Network, Lease, Image, RepoFamilies, Sto
 import {
   getHostInfo, getHostStats, getHostNetworks, listVMs, getVMInfo,
   getStorageInfo, listImages, listRepoImages, listSnapshots, listBackups,
-  vmAction, cloneVM, createVM, deleteImage, downloadCloudImage,
+  vmAction, cloneVM, createVM, deleteImage, downloadCloudImage, downloadRepoIso,
   createSnapshot, revertSnapshot, deleteSnapshot,
   createBackup, deleteBackup, getVMetrics,
 } from '../api';
@@ -243,6 +243,15 @@ export default function Dashboard({ page, selectedVM, navigate, user, addToast, 
     }
   };
 
+  const handleDownloadIso = async (name: string) => {
+    try {
+      await downloadRepoIso(name);
+      addToast(`Download started for ${name}`, 'success');
+    } catch (e: any) {
+      addToast(e.message || 'Download failed', 'error');
+    }
+  };
+
   const divStyle = { marginBottom: 14 };
 
   const inputStyle: React.CSSProperties = {
@@ -394,7 +403,7 @@ export default function Dashboard({ page, selectedVM, navigate, user, addToast, 
     return (
       <>
         <h1>Repository Images</h1>
-        <p className="sub">Cloud images available for download</p>
+        <p className="sub">Cloud images and installation ISOs available for download</p>
         {repoLoading ? (
           <div className="loading"><div className="spinner" /></div>
         ) : !repoFamilies ? (
@@ -411,11 +420,14 @@ export default function Dashboard({ page, selectedVM, navigate, user, addToast, 
                       padding: '10px 0', borderBottom: '1px solid var(--border)',
                     }}>
                     <div>
-                      <div style={{ fontWeight: 500, fontSize: 14 }}>{img.name}</div>
+                      <div style={{ fontWeight: 500, fontSize: 14 }}>
+                        {img.name}
+                        {img.is_iso && <span style={{ marginLeft: 8, fontSize: 10, color: '#f59e0b', border: '1px solid #f59e0b33', borderRadius: 4, padding: '1px 6px' }}>ISO</span>}
+                      </div>
                       <div style={{ fontSize: 12, color: '#71717a' }}>{img.description}</div>
                     </div>
                     <button className="btn btn-primary" style={{ padding: '6px 14px', fontSize: 12 }}
-                      onClick={() => handleDownloadCloud(img.name)}>Download</button>
+                      onClick={() => img.is_iso ? handleDownloadIso(img.name) : handleDownloadCloud(img.name)}>Download</button>
                   </div>
                 ))}
               </div>

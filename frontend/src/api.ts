@@ -59,6 +59,7 @@ export const listImages = () => api<{ status: string; images: import('./types').
 export const deleteImage = (name: string) => api<any>('/images/' + encodeURIComponent(name), { method: 'DELETE' });
 export const listRepoImages = () => api<{ status: string; families: import('./types').RepoFamilies }>('/images/repo/list');
 export const downloadCloudImage = (name: string) => apiJson<any>('/images/download-cloud?name=' + encodeURIComponent(name), 'POST', {});
+export const downloadRepoIso = (name: string) => apiJson<any>('/images/download-repo-iso?name=' + encodeURIComponent(name), 'POST', {});
 export const getStorageInfo = () => api<{ status: string; storage: import('./types').StorageInfo }>('/images/storage/info');
 
 // Auth

@@ -40,6 +40,12 @@ def api_download_cloud_image(name: str):
     return {"status": "ok", "image": img.model_dump()}
 
 
+@router.post("/download-repo-iso")
+def api_download_repo_iso(name: str):
+    img = image_manager.download_repo_iso(name)
+    return {"status": "ok", "image": img.model_dump()}
+
+
 @router.get("/{name}")
 def api_get_image(name: str):
     img = image_manager.get_image(name)
