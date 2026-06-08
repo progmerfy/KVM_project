@@ -5,7 +5,6 @@ ENV PYTHONPATH=/usr/lib/python3/dist-packages
 
 WORKDIR /app
 
-# Install system dependencies
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
     build-essential \
@@ -23,17 +22,15 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY . /app
 
-# ── Build React frontend ──
 FROM node:20-slim AS frontend-builder
 WORKDIR /frontend
-COPY frontend/package.json frontend/package-lock.json* /frontend/
-RUN npm install
+COPY frontend/package.json /frontend/
+RUN npm install --no-audit --no-fund
 COPY frontend/ /frontend/
 RUN npx vite build
 
-# ── Final image ──
 FROM backend
-COPY --from=frontend-builder /frontend/dist /app/app/static
+COPY --from=frontend-builder /frontend/dist /app/frontend-dist
 
 EXPOSE 8000 8443
 

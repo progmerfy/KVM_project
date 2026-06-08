@@ -17,7 +17,7 @@ services:
       - DEFAULT_HOST_URI=qemu:///system
       - SSL_KEY_FILE=/app/certs/kvm-mgr.key
       - SSL_CERT_FILE=/app/certs/kvm-mgr.crt
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8443
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8443 --ssl-keyfile /app/certs/kvm-mgr.key --ssl-certfile /app/certs/kvm-mgr.crt
 
   tests:
     build: .

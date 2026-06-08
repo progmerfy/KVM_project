@@ -140,7 +140,7 @@ def health_secured(auth: dict = Depends(require_auth)):
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    react_index = os.path.join(os.path.dirname(__file__), "static", "index.html")
+    react_index = os.path.join(os.path.dirname(__file__), "..", "frontend-dist", "index.html")
     if os.path.exists(react_index):
         return HTMLResponse(content=open(react_index, encoding="utf-8").read())
     return HTMLResponse(content=_APP_HTML)
@@ -1510,7 +1510,7 @@ init();
 </html>"""
 
 
-static_dir = os.path.join(os.path.dirname(__file__), "static")
+static_dir = os.path.join(os.path.dirname(__file__), "..", "frontend-dist")
 assets_dir = os.path.join(static_dir, "assets")
 if os.path.isdir(assets_dir):
     app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
