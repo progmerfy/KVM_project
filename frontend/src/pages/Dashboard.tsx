@@ -474,6 +474,9 @@ export default function Dashboard({ page, selectedVM, navigate, user, addToast, 
             <div className="row"><span className="label">OS Type</span><span className="value">{vmDetail.os_type || '-'}</span></div>
             <div className="row"><span className="label">Autostart</span><span className="value">{vmDetail.autostart ? 'Yes' : 'No'}</span></div>
             <div className="row"><span className="label">Uptime</span><span className="value">{vmDetail.uptime_seconds ? Math.floor(vmDetail.uptime_seconds / 3600) + 'h ' + Math.floor((vmDetail.uptime_seconds % 3600) / 60) + 'm' : '-'}</span></div>
+            {vmDetail.root_password && (
+              <div className="row"><span className="label">Root Password</span><span className="value" style={{ fontFamily: 'monospace', fontSize: 13, color: '#f59e0b' }}>{vmDetail.root_password}</span></div>
+            )}
           </div>
           <div className="detail-section">
             <h3>Resources</h3>

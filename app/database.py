@@ -46,6 +46,7 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 vm_name TEXT UNIQUE NOT NULL,
                 owner_id INTEGER NOT NULL,
+                root_password TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (owner_id) REFERENCES users(id)
             );
@@ -80,6 +81,11 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
             CREATE INDEX IF NOT EXISTS idx_audit_resource ON audit_log(resource_type, resource_name);
         """)
+
+        # Migration: add root_password to vm_ownership
+        own_cols = [r["name"] for r in conn.execute("PRAGMA table_info(vm_ownership)")]
+        if "root_password" not in own_cols:
+            conn.execute("ALTER TABLE vm_ownership ADD COLUMN root_password TEXT")
 
         # Add email column if missing (migration)
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(users)")]
@@ -157,12 +163,12 @@ def list_users() -> list[dict]:
         conn.close()
 
 
-def set_vm_owner(vm_name: str, owner_id: int) -> None:
+def set_vm_owner(vm_name: str, owner_id: int, root_password: str = None) -> None:
     conn = _get_conn()
     try:
         conn.execute(
-            "INSERT OR REPLACE INTO vm_ownership (vm_name, owner_id) VALUES (?, ?)",
-            (vm_name, owner_id),
+            "INSERT OR REPLACE INTO vm_ownership (vm_name, owner_id, root_password) VALUES (?, ?, ?)",
+            (vm_name, owner_id, root_password),
         )
         conn.commit()
     finally:
@@ -173,13 +179,26 @@ def get_vm_owner(vm_name: str) -> dict | None:
     conn = _get_conn()
     try:
         cur = conn.execute(
-            """SELECT u.id, u.username, v.vm_name
+            """SELECT u.id, u.username, v.vm_name, v.root_password
                FROM vm_ownership v JOIN users u ON v.owner_id = u.id
                WHERE v.vm_name = ?""",
             (vm_name,),
         )
         row = cur.fetchone()
         return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_vm_root_password(vm_name: str) -> str | None:
+    conn = _get_conn()
+    try:
+        cur = conn.execute(
+            "SELECT root_password FROM vm_ownership WHERE vm_name = ?",
+            (vm_name,),
+        )
+        row = cur.fetchone()
+        return row["root_password"] if row else None
     finally:
         conn.close()
 

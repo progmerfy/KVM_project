@@ -111,7 +111,7 @@ def create_vm(req: VMCreateRequest, owner_id: int = None) -> dict:
         if root_password:
             result["root_password"] = root_password
         if owner_id:
-            set_vm_owner(spec.name, owner_id)
+            set_vm_owner(spec.name, owner_id, root_password)
         return result
     except Exception:
         logger.exception("create_vm failed, rolling back")
@@ -345,6 +345,11 @@ def get_vm_info(name: str, host_uri: str = None) -> Optional[dict]:
                 vnc = re.search(r'<graphics\s+type="vnc"\s+port="(\d+)"', xml)
             if vnc:
                 result["vnc_port"] = int(vnc.group(1))
+
+        # Add stored root password if exists
+        pw = database.get_vm_root_password(name)
+        if pw:
+            result["root_password"] = pw
 
         return result
     finally:

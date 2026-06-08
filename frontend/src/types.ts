@@ -7,7 +7,7 @@ export interface VM {
   cpu?: number; memory_mb?: number; os_type?: string; uuid?: string;
   vnc_port?: number; autostart?: boolean; uptime_seconds?: number;
   max_memory_mb?: number; cpu_time_s?: number; disks?: Disk[];
-  interfaces?: NetInterface[];
+  interfaces?: NetInterface[]; root_password?: string;
 }
 
 export interface Disk { type: string; device: string; source?: string; target?: string; readonly?: boolean; }
