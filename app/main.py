@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 import time
 
 from fastapi import Depends, FastAPI, Request
@@ -11,7 +12,36 @@ from app.api import vm_routes, image_routes, host_routes, auth_routes
 from app.config import settings
 from app.errors import AppError
 from app.auth import require_auth
-from app.database import init_db
+from app.database import init_db, get_enabled_backup_schedules, update_backup_schedule_last_run
+from app.services.vm_manager import backup_vm
+
+
+_scheduler_thread: threading.Thread | None = None
+_scheduler_stop = threading.Event()
+
+
+def _backup_scheduler_loop():
+    logger.info("Backup scheduler started")
+    while not _scheduler_stop.is_set():
+        try:
+            from croniter import croniter
+            from datetime import datetime
+
+            now = datetime.now()
+            schedules = get_enabled_backup_schedules()
+            for sched in schedules:
+                try:
+                    cron = croniter(sched["cron_expression"], now)
+                    prev = cron.get_prev(datetime)
+                    if (now - prev).total_seconds() < 90:
+                        logger.info("Running scheduled backup for %s", sched["vm_name"])
+                        backup_vm(sched["vm_name"])
+                        update_backup_schedule_last_run(sched["id"])
+                except Exception as e:
+                    logger.error("Scheduled backup failed for %s: %s", sched["vm_name"], e)
+        except Exception as e:
+            logger.error("Backup scheduler error: %s", e)
+        _scheduler_stop.wait(60)
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -61,6 +91,18 @@ app = FastAPI(
 def on_startup():
     init_db()
     logger.info("Database initialized")
+    global _scheduler_thread
+    _scheduler_thread = threading.Thread(target=_backup_scheduler_loop, daemon=True)
+    _scheduler_thread.start()
+    logger.info("Backup scheduler thread started")
+
+
+@app.on_event("shutdown")
+def on_shutdown():
+    _scheduler_stop.set()
+    if _scheduler_thread:
+        _scheduler_thread.join(timeout=5)
+    logger.info("Backup scheduler stopped")
 
 app.add_middleware(RequestLogMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
@@ -307,6 +349,12 @@ _APP_HTML = """<!DOCTYPE html>
   .activity-item .act-text { flex: 1; }
   .activity-item .act-text .act-name { font-weight: 500; }
   .activity-item .act-text .act-time { font-size: 11px; color: var(--text2); margin-top: 2px; }
+  .net-section { margin-bottom: 32px; }
+  .net-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .leases-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .leases-table th { color: var(--text2); padding: 8px 6px; text-align: left; border-bottom: 1px solid var(--border); font-weight: 500; }
+  .leases-table td { padding: 8px 6px; border-bottom: 1px solid var(--border); font-family: monospace; font-size: 12px; }
+  .leases-table tr:last-child td { border-bottom: none; }
   .btn.loading { opacity: 0.6; pointer-events: none; position: relative; }
   .btn.loading::after {
     content: ''; width: 14px; height: 14px; border: 2px solid transparent;
@@ -546,17 +594,35 @@ function loadVMs(e) {
     api('/host/stats').catch(() => ({})),
     api('/images/storage/info').catch(() => ({})),
     api('/vm/list').catch(() => ({ vms: [] })),
-  ]).then(([hostInfo, hostStats, imgStorage, vmData]) => {
+    api('/host/networks').catch(() => ({ networks: [], leases: [] })),
+  ]).then(([hostInfo, hostStats, imgStorage, vmData, netData]) => {
     const h = hostInfo.host || {};
     const s = hostStats.stats || {};
     const st = imgStorage.storage || {};
     const vms = vmData.vms || [];
+    const nets = netData.networks || [];
+    const leases = netData.leases || [];
     const running = vms.filter(v => v.state === 'running').length;
     const stopped = vms.filter(v => v.state === 'stopped').length;
     const cpu = s.cpu || {};
     const mem = s.memory || {};
     const disks = s.storage || [];
     const sysDisk = disks.find(d => d.mount === '/') || disks[0] || {};
+    function netTable() {
+      if (!nets.length) return '<div class="empty" style="grid-column:span 2"><p>No networks</p></div>';
+      return nets.map(n => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:13px">
+          <div><span style="font-weight:500">${n.name}</span> <span style="color:var(--text2)">${n.bridge || ''}</span></div>
+          <div><span style="color:${n.active ? 'var(--green)' : 'var(--red)'}">${n.active ? 'Active' : 'Inactive'}</span>${n.subnet ? ' &middot; ' + n.subnet : ''}</div>
+        </div>`).join('');
+    }
+    function leaseTable() {
+      if (!leases.length) return '<div class="empty"><p>No active DHCP leases</p></div>';
+      return `<table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="color:var(--text2);border-bottom:1px solid var(--border)"><th style="padding:8px 6px;text-align:left">IP</th><th style="padding:8px 6px;text-align:left">MAC</th><th style="padding:8px 6px;text-align:left">Hostname</th><th style="padding:8px 6px;text-align:left">Network</th></tr></thead>
+        <tbody>${leases.map(l => `<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 6px;font-family:monospace">${l.ip}</td><td style="padding:8px 6px;font-family:monospace;font-size:12px">${l.mac}</td><td style="padding:8px 6px">${l.hostname || '-'}</td><td style="padding:8px 6px">${l.network}</td></tr>`).join('')}</tbody>
+      </table>`;
+    }
     main.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <h1>Dashboard</h1>
@@ -622,6 +688,20 @@ function loadVMs(e) {
           <h2 style="font-size:16px;font-weight:600;margin-bottom:12px">Recent Activity</h2>
           <div class="activity-list">${renderActivity()}</div>
         </div>
+      </div>
+
+      <div style="margin-bottom:32px">
+        <h2 style="font-size:18px;font-weight:600;margin-bottom:12px">Network Interfaces</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+          <div class="detail-section">
+            <h3>Networks</h3>
+            <div style="display:flex;flex-direction:column;gap:6px">${netTable()}</div>
+          </div>
+          <div class="detail-section">
+            <h3>DHCP Leases (${leases.length})</h3>
+            ${leaseTable()}
+          </div>
+        </div>
       </div>`;
   }).catch(() => { main.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load. Check your connection.</div>'; });
   return false;
@@ -658,10 +738,21 @@ function loadDetail(name, initialTab) {
   switchDetailTab(initialTab || 'config', name);
 }
 
+function loadDetailActions(name) {
+  api('/vm/info/' + name).then(info => {
+    const vm = info.vm || {};
+    const uptime = vm.uptime_seconds;
+    const uptimeStr = uptime ? Math.floor(uptime / 3600) + 'h ' + Math.floor((uptime % 3600) / 60) + 'm' : '-';
+    document.getElementById('detail-sub').innerHTML = statusBadge(vm.state) + (uptime ? ' &middot; Uptime: ' + uptimeStr : '');
+    document.getElementById('detail-actions').innerHTML = (vm.state === 'running' ? `<button class="btn btn-ghost" onclick="vmAction('${vm.name}','stop')">Stop</button><button class="btn btn-ghost" onclick="vmAction('${vm.name}','reboot')">Reboot</button>` : `<button class="btn btn-primary" onclick="vmAction('${vm.name}','start')">Start</button>`) + `<button class="btn btn-primary" onclick="window.location.href='/vm/vnc/console/${vm.name}'">Console</button>`;
+  }).catch(() => {});
+}
+
 function switchDetailTab(tab, name) {
   _detailTab = tab;
   document.querySelectorAll('.tabs .tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   const body = document.getElementById('detail-body');
+  loadDetailActions(name);
   if (tab === 'config') loadDetailConfig(name, body);
   else if (tab === 'snapshots') loadDetailSnapshots(name, body);
   else if (tab === 'backups') loadDetailBackups(name, body);
@@ -675,10 +766,6 @@ function loadDetailConfig(name, body) {
     const memStats = m.memory_stats || {};
     const disks = vm.disks || [];
     const nets = vm.interfaces || [];
-    const uptime = vm.uptime_seconds;
-    const uptimeStr = uptime ? Math.floor(uptime / 3600) + 'h ' + Math.floor((uptime % 3600) / 60) + 'm' : '-';
-    document.getElementById('detail-sub').innerHTML = statusBadge(vm.state) + (uptime ? ' &middot; Uptime: ' + uptimeStr : '');
-    document.getElementById('detail-actions').innerHTML = (vm.state === 'running' ? `<button class="btn btn-ghost" onclick="vmAction('${vm.name}','stop')">Stop</button><button class="btn btn-ghost" onclick="vmAction('${vm.name}','reboot')">Reboot</button>` : `<button class="btn btn-primary" onclick="vmAction('${vm.name}','start')">Start</button>`) + `<button class="btn btn-primary" onclick="window.location.href='/vm/vnc/console/${vm.name}'">Console</button>`;
     body.innerHTML = `
       <div class="detail-grid">
         <div class="detail-section">
@@ -742,10 +829,10 @@ function showCloneDialog(name) {
   document.getElementById('modal-body').innerHTML = `
     <form onsubmit="return doClone(event, '${name}')">
       <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">New VM Name</label>
-      <input type="text" id="clone-name" placeholder="${name}-clone" required style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
-      <div style="display:flex;gap:8px">
+      <input type="text" id="clone-name" placeholder="${name}-clone" required autofocus style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
+      <div style="display:flex;gap:8px;margin-top:8px">
         <button type="submit" class="btn btn-primary" style="flex:1">Clone</button>
-        <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+        <button type="button" class="btn btn-ghost" onclick="closeModal()" style="flex:1">Cancel</button>
       </div>
     </form>`;
   openModal();
@@ -773,7 +860,7 @@ function loadDetailSnapshots(name, body) {
     body.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
         <h3 style="font-size:16px;font-weight:600">Snapshots</h3>
-        <button class="btn btn-primary" onclick="createSnapshot('${name}')">+ Create Snapshot</button>
+        <button class="btn btn-primary" onclick="createSnapshot('${name}',this)">+ Create Snapshot</button>
       </div>
       ${snaps.length ? `<div style="display:grid;gap:8px">${snaps.map(s => `
         <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px">
@@ -788,17 +875,18 @@ function loadDetailSnapshots(name, body) {
 
 function loadDetailBackups(name, body) {
   body.innerHTML = '<div style="text-align:center;padding:40px"><div class="spinner"></div></div>';
-  api('/vm/export/' + name).then(data => {
-    const exp = data.export || {};
-    const backups = exp.backups || [];
+  api('/vm/backup/list/' + name).then(data => {
+    const backups = data.backups || [];
     body.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
         <h3 style="font-size:16px;font-weight:600">Backups</h3>
-        <button class="btn btn-primary" onclick="createBackup('${name}')">+ Backup Now</button>
+        <button class="btn btn-primary" onclick="createBackup('${name}',this)">+ Backup Now</button>
       </div>
       ${backups.length ? `<div style="display:grid;gap:8px">${backups.map(b => `
         <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px">
-          <span style="font-weight:500">${b.path || b}</span>
+          <span style="font-weight:500">${b.dir}</span>
+          <span style="font-size:12px;color:var(--text2)">${b.timestamp}</span>
+          <button class="btn btn-ghost" onclick="deleteBackup('${name}','${b.dir}')" style="font-size:12px;padding:4px 10px;color:var(--red);border-color:var(--red)">Delete</button>
         </div>`).join('')}</div>` : '<div class="empty"><p>No backups yet</p></div>'}`;
   }).catch(() => { body.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load backups</div>'; });
 }
@@ -842,19 +930,36 @@ function loadDetailMetrics(name, body) {
   }).catch(() => { body.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load metrics</div>'; });
 }
 
-function createSnapshot(name) {
-  const snap = prompt('Snapshot name:');
-  if (!snap) return;
+function createSnapshot(name, btn) {
+  document.getElementById('modal-title').textContent = 'Create Snapshot';
+  document.getElementById('modal-body').innerHTML = `
+    <form id="snap-form" onsubmit="return doCreateSnapshot(event,'${name}')">
+      <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">Snapshot Name</label>
+      <input type="text" id="snap-name" placeholder="my-snapshot" required autofocus style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button type="submit" class="btn btn-primary" style="flex:1">Create</button>
+        <button type="button" class="btn btn-ghost" onclick="closeModal()" style="flex:1">Cancel</button>
+      </div>
+    </form>`;
+  openModal();
+}
+
+function doCreateSnapshot(e, name) {
+  e.preventDefault();
+  const snap = document.getElementById('snap-name').value;
+  if (!snap) return false;
+  closeModal();
   fetch('/vm/snapshot/create?name=' + encodeURIComponent(name) + '&snap_name=' + encodeURIComponent(snap), {
     method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN },
-  }).then(r => { if (r.ok) { showToast('Snapshot created'); switchDetailTab('snapshots', name); } else showToast('Failed'); });
+  }).then(r => { if (r.ok) { showToast('Snapshot created'); loadDetail(name, 'snapshots'); } else showToast('Failed'); }).catch(() => showToast('Error'));
+  return false;
 }
 
 function revertSnapshot(name, snap) {
   confirmAction('Revert to snapshot "' + snap + '"?', function() {
     fetch('/vm/snapshot/revert?name=' + encodeURIComponent(name) + '&snap_name=' + encodeURIComponent(snap), {
       method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN },
-    }).then(r => { if (r.ok) { showToast('Reverted to ' + snap); loadVMs(); } else showToast('Failed'); });
+    }).then(r => { if (r.ok) { showToast('Reverted to ' + snap); loadDetail(name, 'snapshots'); } else showToast('Failed'); }).catch(() => showToast('Error'));
   });
 }
 
@@ -862,15 +967,27 @@ function deleteSnapshot(name, snap) {
   confirmAction('Delete snapshot "' + snap + '"?', function() {
     fetch('/vm/snapshot/delete?name=' + encodeURIComponent(name) + '&snap_name=' + encodeURIComponent(snap), {
       method: 'DELETE', headers: { 'Authorization': 'Bearer ' + TOKEN },
-    }).then(r => { if (r.ok) { showToast('Deleted'); switchDetailTab('snapshots', name); } else showToast('Failed'); });
+    }).then(r => {
+      if (r.ok) { showToast('Deleted'); return loadDetail(name, 'snapshots'); }
+      showToast('Failed');
+    }).catch(() => showToast('Error'));
   });
 }
 
-function createBackup(name) {
+function createBackup(name, btn) {
+  if (btn) btn.classList.add('loading');
   fetch('/vm/backup', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
     body: JSON.stringify({ name }),
-  }).then(r => { if (r.ok) { showToast('Backup created'); switchDetailTab('backups', name); } else showToast('Failed'); });
+  }).then(r => { if (r.ok) { showToast('Backup created'); loadDetail(name, 'backups'); } else { showToast('Failed'); if (btn) btn.classList.remove('loading'); } }).catch(() => { showToast('Error'); if (btn) btn.classList.remove('loading'); });
+}
+
+function deleteBackup(name, dir) {
+  confirmAction('Delete backup at "' + dir + '"?', function() {
+    fetch('/vm/backup/delete?backup_dir=' + encodeURIComponent(dir), {
+      method: 'DELETE', headers: { 'Authorization': 'Bearer ' + TOKEN },
+    }).then(r => { if (r.ok) { showToast('Backup deleted'); loadDetail(name, 'backups'); } else showToast('Failed'); });
+  });
 }
 
 function uploadIso() {
@@ -930,7 +1047,8 @@ function toggleIsoSubmenu(e) {
   return false;
 }
 
-function loadISOs() {
+function loadISOs(e) {
+  if (e) e.preventDefault();
   const main = document.getElementById('main-content');
   setBreadcrumbs('ISO Store', 'Browse Images');
   main.innerHTML = `
@@ -961,9 +1079,11 @@ function loadISOs() {
       </div>
       ${disks.length ? `<h2 style="font-size:16px;margin:24px 0 12px">Disk Images</h2><div class="vm-grid">${disks.map(isoCard).join('')}</div>` : ''}`;
   }).catch(() => { main.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load</div>'; });
+  return false;
 }
 
-function loadRepoImages() {
+function loadRepoImages(e) {
+  if (e) e.preventDefault();
   const main = document.getElementById('main-content');
   setBreadcrumbs('ISO Store', 'Repo Images');
   main.innerHTML = '<div style="text-align:center;padding:80px 0"><div class="spinner"></div></div>';
@@ -978,11 +1098,11 @@ function loadRepoImages() {
     for (const [fam, imgs] of Object.entries(families)) {
       html += `<h2 style="font-size:16px;margin:20px 0 12px">${famLabels[fam] || fam}</h2><div class="vm-grid">`;
       html += imgs.map(img => `
-        <div class="vm-card" style="cursor:pointer" onclick="downloadRepoImage('${img.name}')">
+        <div class="vm-card" style="cursor:pointer" onclick="downloadRepoImage('${img.name}',this)">
           <div class="top"><div class="name">${img.name}</div></div>
           <div class="info"><div class="info-item" style="grid-column:span 2">${img.description}</div></div>
           <div class="actions" onclick="event.stopPropagation()">
-            <button class="btn btn-primary" onclick="downloadRepoImage('${img.name}')">Download</button>
+            <button class="btn btn-primary" onclick="downloadRepoImage('${img.name}',this)">Download</button>
           </div>
         </div>`).join('');
       html += `</div>`;
@@ -990,16 +1110,19 @@ function loadRepoImages() {
     if (!Object.keys(families).length) html += '<div class="empty"><p>No repository images available</p></div>';
     main.innerHTML = html;
   }).catch(() => { main.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load repos</div>'; });
+  return false;
 }
 
-function downloadRepoImage(name) {
+function downloadRepoImage(name, btn) {
+  if (btn) btn.classList.add('loading');
   fetch('/images/download-cloud?name=' + encodeURIComponent(name), {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + TOKEN },
   }).then(r => r.json().then(d => ({ ok: r.ok, data: d }))).then(({ ok, data }) => {
-    if (!ok) { showToast(data.detail?.message || 'Download failed'); return; }
-    showToast(name + ' downloaded');
-  }).catch(() => showToast('Download error'));
+    if (!ok) { showToast(data.detail?.message || 'Download failed'); }
+    else { showToast(name + ' downloaded'); }
+    if (btn) btn.classList.remove('loading');
+  }).catch(() => { showToast('Download error'); if (btn) btn.classList.remove('loading'); });
 }
 
 function isoCard(img) {
@@ -1024,15 +1147,16 @@ function showUploadIsoDialog() {
   document.getElementById('modal-body').innerHTML = `
     <form onsubmit="uploadIso();return false">
       <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">File</label>
-      <input type="file" id="iso-file" style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
+      <input type="file" id="iso-file" autofocus style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
       <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">Name <span style="color:#52525b">(optional, defaults to filename)</span></label>
       <input type="text" id="iso-upload-name" placeholder="my-image.iso" style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;margin-top:8px">
         <button type="submit" class="btn btn-primary" style="flex:1">Upload</button>
         <button type="button" class="btn btn-ghost" onclick="closeModal()" style="flex:1">Cancel</button>
       </div>
     </form>`;
   openModal();
+  return false;
 }
 
 function showDownloadIsoDialog() {
@@ -1040,15 +1164,16 @@ function showDownloadIsoDialog() {
   document.getElementById('modal-body').innerHTML = `
     <form onsubmit="downloadIso();return false">
       <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">URL</label>
-      <input type="url" id="iso-url" placeholder="https://releases.ubuntu.com/ubuntu.iso" required style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
+      <input type="url" id="iso-url" placeholder="https://releases.ubuntu.com/ubuntu.iso" required autofocus style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
       <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">Name <span style="color:#52525b">(optional, defaults from URL)</span></label>
       <input type="text" id="iso-dl-name" placeholder="my-image.iso" style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;margin-top:8px">
         <button type="submit" class="btn btn-primary" style="flex:1">Download</button>
         <button type="button" class="btn btn-ghost" onclick="closeModal()" style="flex:1">Cancel</button>
       </div>
     </form>`;
   openModal();
+  return false;
 }
 
 function showCreateDialog() {
@@ -1062,8 +1187,8 @@ function showCreateDialog() {
         <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">Name</label>
         <input type="text" id="vm-name" placeholder="my-vm" required autofocus style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
 
-        <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">Base Image</label>
-        <select id="vm-image" required style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">${opts}</select>
+        <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">Base Image <span style="color:#52525b">(optional, blank disk if empty)</span></label>
+        <select id="vm-image" style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit"><option value="">None (blank disk)</option>${opts}</select>
 
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
           <div><label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">CPU</label><input type="number" id="vm-cpu" value="1" min="1" style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit"></div>
@@ -1077,7 +1202,7 @@ function showCreateDialog() {
         <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">SSH Key <span style="color:#52525b">(optional)</span></label>
         <textarea id="vm-ssh" placeholder="ssh-rsa AAAAB3..." rows="2" style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit;resize:vertical"></textarea>
 
-        <div style="display:flex;gap:8px;margin-top:4px">
+        <div style="display:flex;gap:8px;margin-top:8px">
           <button type="submit" class="btn btn-primary" style="flex:1">Create</button>
           <button type="button" class="btn btn-ghost" onclick="closeModal()" style="flex:1">Cancel</button>
         </div>
@@ -1088,13 +1213,14 @@ function showCreateDialog() {
 
 function createVM(e) {
   e.preventDefault();
+  const image = document.getElementById('vm-image').value;
   const body = {
     name: document.getElementById('vm-name').value,
-    image: document.getElementById('vm-image').value,
     cpu: parseInt(document.getElementById('vm-cpu').value) || 1,
     memory_mb: parseInt(document.getElementById('vm-ram').value) || 512,
     disk_gb: parseInt(document.getElementById('vm-disk').value) || 10,
   };
+  if (image) body.image = image;
   const iso = document.getElementById('vm-iso').value;
   if (iso) body.iso_path = iso;
   const ssh = document.getElementById('vm-ssh').value;
@@ -1120,7 +1246,7 @@ function loadSettings(e) {
   api('/auth/me').then(d => {
     const user = d.user || {};
     const isAdmin = user.is_admin;
-    let adminSection = '';
+    let adminSections = '';
     if (isAdmin) {
       api('/auth/users').then(ud => {
         const users = ud.users || [];
@@ -1131,10 +1257,78 @@ function loadSettings(e) {
             <span style="font-size:12px;color:var(--text2)">${u.created_at || ''}</span>
           </div>`).join('');
       }).catch(() => {});
-      adminSection = `<div class="detail-section" style="margin-top:24px">
-        <h3>Users</h3>
-        <div id="user-list"><div style="text-align:center;padding:12px"><div class="spinner"></div></div></div>
-      </div>`;
+      api('/host/info').then(hi => {
+        const el = document.getElementById('host-info');
+        if (el) {
+          const h = hi.host || {};
+          const rows = [];
+          rows.push(`<div class="row"><span class="label">Hostname</span><span class="value">${h.hostname || ''}</span></div>`);
+          rows.push(`<div class="row"><span class="label">Uptime</span><span class="value">${h.uptime || ''}</span></div>`);
+          if (h.cpu) {
+            rows.push(`<div class="row"><span class="label">CPU Cores</span><span class="value">${h.cpu.cores || ''}</span></div>`);
+            rows.push(`<div class="row"><span class="label">CPU Model</span><span class="value">${h.cpu.model || ''}</span></div>`);
+          }
+          if (h.memory) {
+            rows.push(`<div class="row"><span class="label">Memory</span><span class="value">${h.memory.total_gb || ''} GB (${h.memory.total_mb || ''} MB)</span></div>`);
+          }
+          if (h.storage && h.storage.length) {
+            h.storage.forEach(s => {
+              rows.push(`<div class="row"><span class="label">Disk (${s.filesystem || ''})</span><span class="value">${s.size_gb || ''} GB total, ${s.used_gb || ''} GB used, ${s.avail_gb || ''} GB free</span></div>`);
+            });
+          }
+          el.innerHTML = rows.join('');
+        }
+      }).catch(() => {});
+      api('/images/storage/info').then(si => {
+        const el = document.getElementById('storage-info');
+        if (el && si.storage) {
+          const s = si.storage;
+          el.innerHTML = `
+            <div class="row"><span class="label">Path</span><span class="value">${s.path || ''}</span></div>
+            <div class="row"><span class="label">Total</span><span class="value">${s.total_gb || ''} GB</span></div>
+            <div class="row"><span class="label">Used</span><span class="value">${s.used_gb || ''} GB</span></div>
+            <div class="row"><span class="label">Free</span><span class="value">${s.free_gb || ''} GB</span></div>`;
+        }
+      }).catch(() => {});
+      api('/vm/backup/schedules').then(sd => {
+        const el = document.getElementById('schedule-list');
+        if (el && sd.schedules) {
+          el.innerHTML = sd.schedules.map(s => `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px">
+              <div>
+                <span style="font-weight:500">${s.vm_name}</span>
+                <span style="font-size:12px;color:var(--text2);margin-left:8px">cron: ${s.cron_expression}</span>
+                <span style="font-size:12px;color:var(--text2);margin-left:8px">retention: ${s.retention}d</span>
+                <span style="font-size:12px;margin-left:8px;color:${s.enabled ? 'var(--green)' : 'var(--red)'}">${s.enabled ? 'enabled' : 'disabled'}</span>
+                ${s.last_run ? `<span style="font-size:11px;color:var(--text2);margin-left:8px">last: ${s.last_run}</span>` : ''}
+              </div>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-ghost" onclick="editSchedule(${s.id},'${s.vm_name}','${s.cron_expression}',${s.retention},${s.enabled})" style="font-size:12px;padding:4px 10px">Edit</button>
+                <button class="btn btn-ghost" onclick="deleteSchedule(${s.id})" style="font-size:12px;padding:4px 10px;color:var(--red);border-color:var(--red)">Delete</button>
+              </div>
+            </div>`).join('');
+        }
+      }).catch(() => {});
+      adminSections = `
+        <div class="detail-section" style="margin-top:24px">
+          <h3>Users</h3>
+          <div id="user-list"><div style="text-align:center;padding:12px"><div class="spinner"></div></div></div>
+        </div>
+        <div class="detail-section" style="margin-top:24px">
+          <h3>Host Info</h3>
+          <div id="host-info"><div style="text-align:center;padding:12px"><div class="spinner"></div></div></div>
+        </div>
+        <div class="detail-section" style="margin-top:24px">
+          <h3>Storage</h3>
+          <div id="storage-info"><div style="text-align:center;padding:12px"><div class="spinner"></div></div></div>
+        </div>
+        <div class="detail-section" style="margin-top:24px">
+          <h3>Backup Schedules</h3>
+          <div style="margin-bottom:10px">
+            <button class="btn btn-primary" onclick="showAddScheduleDialog()" style="font-size:13px;padding:6px 14px">+ Add Schedule</button>
+          </div>
+          <div id="schedule-list"><div style="text-align:center;padding:12px"><div class="spinner"></div></div></div>
+        </div>`;
     }
     main.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -1162,9 +1356,94 @@ function loadSettings(e) {
           <div class="row"><span class="label">Role</span><span class="value">${isAdmin ? 'Admin' : 'User'}</span></div>
         </div>
       </div>
-      ${adminSection}`;
+      ${adminSections}`;
   }).catch(() => { main.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Failed to load</div>'; });
   return false;
+}
+
+function showAddScheduleDialog() {
+  document.getElementById('modal-title').textContent = 'Add Backup Schedule';
+  document.getElementById('modal-body').innerHTML = `
+    <form onsubmit="saveSchedule(event)">
+      <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">VM Name</label>
+      <input type="text" id="sched-vm" required placeholder="my-vm" autofocus style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
+      <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">Cron Expression</label>
+      <input type="text" id="sched-cron" required placeholder="0 3 * * *" style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:14px">Examples: <code>0 3 * * *</code> daily 3am, <code>*/30 * * * *</code> every 30min</div>
+      <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">Retention (days)</label>
+      <input type="number" id="sched-retention" value="7" min="1" max="365" style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
+      <input type="hidden" id="sched-id" value="">
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button type="submit" class="btn btn-primary" style="flex:1">Save</button>
+        <button type="button" class="btn btn-ghost" onclick="closeModal()" style="flex:1">Cancel</button>
+      </div>
+    </form>`;
+  openModal();
+}
+
+function editSchedule(id, vmName, cronExpr, retention, enabled) {
+  document.getElementById('modal-title').textContent = 'Edit Backup Schedule';
+  document.getElementById('modal-body').innerHTML = `
+    <form onsubmit="updateSchedule(event, ${id})">
+      <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">VM Name</label>
+      <input type="text" id="sched-vm" value="${vmName}" disabled style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#71717a;font-size:14px;font-family:inherit">
+      <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">Cron Expression</label>
+      <input type="text" id="sched-cron" value="${cronExpr}" required autofocus style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
+      <label style="display:block;margin-bottom:4px;font-size:13px;color:#71717a">Retention (days)</label>
+      <input type="number" id="sched-retention" value="${retention}" min="1" max="365" style="width:100%;padding:10px 12px;margin-bottom:14px;background:#0a0a0f;border:1px solid #1e1e32;border-radius:6px;color:#fff;font-size:14px;font-family:inherit">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#71717a;margin-bottom:14px">
+        <input type="checkbox" id="sched-enabled" ${enabled ? 'checked' : ''}> Enabled
+      </label>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button type="submit" class="btn btn-primary" style="flex:1">Update</button>
+        <button type="button" class="btn btn-ghost" onclick="closeModal()" style="flex:1">Cancel</button>
+      </div>
+    </form>`;
+  openModal();
+}
+
+function saveSchedule(e) {
+  e.preventDefault();
+  const vm = document.getElementById('sched-vm').value.trim();
+  const cron = document.getElementById('sched-cron').value.trim();
+  const retention = parseInt(document.getElementById('sched-retention').value) || 7;
+  closeModal();
+  fetch('/vm/backup/schedules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+    body: JSON.stringify({ vm_name: vm, cron_expression: cron, retention: retention }),
+  }).then(r => r.json().then(d => ({ ok: r.ok, data: d }))).then(({ ok, data }) => {
+    if (!ok) { showToast(data.detail?.message || 'Failed'); }
+    else { showToast('Schedule created'); loadSettings(); }
+  }).catch(() => showToast('Error'));
+}
+
+function updateSchedule(e, id) {
+  e.preventDefault();
+  const cron = document.getElementById('sched-cron').value.trim();
+  const retention = parseInt(document.getElementById('sched-retention').value) || 7;
+  const enabled = document.getElementById('sched-enabled').checked;
+  closeModal();
+  fetch('/vm/backup/schedules/' + id, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+    body: JSON.stringify({ cron_expression: cron, retention: retention, enabled: enabled }),
+  }).then(r => r.json().then(d => ({ ok: r.ok, data: d }))).then(({ ok, data }) => {
+    if (!ok) { showToast(data.detail?.message || 'Failed'); }
+    else { showToast('Schedule updated'); loadSettings(); }
+  }).catch(() => showToast('Error'));
+}
+
+function deleteSchedule(id) {
+  confirmAction('Delete this backup schedule?', () => {
+    fetch('/vm/backup/schedules/' + id, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + TOKEN },
+    }).then(r => r.json().then(d => ({ ok: r.ok, data: d }))).then(({ ok }) => {
+      if (ok) { showToast('Schedule deleted'); loadSettings(); }
+      else { showToast('Failed'); }
+    }).catch(() => showToast('Error'));
+  });
 }
 
 function changePassword(e) {
