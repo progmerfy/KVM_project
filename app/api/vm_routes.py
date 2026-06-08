@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from app.api.schemas import (
     VMCreateRequest,
@@ -14,6 +15,8 @@ from app.api.schemas import (
     VMBackupRequest,
     VMRestoreRequest,
 )
+from typing import Optional
+
 from app.services.vm_manager import (
     create_vm,
     start_vm,
@@ -42,6 +45,8 @@ from app.services.vm_manager import (
     clone_vm,
     backup_vm,
     restore_vm,
+    list_backups_for_vm,
+    delete_backup,
     get_metrics,
     authorize_vm_access,
     set_vm_autostart,
@@ -49,6 +54,13 @@ from app.services.vm_manager import (
 from app.errors import ServiceError
 from app.api.vnc import router as vnc_router
 from app.auth import get_current_user
+from app.database import (
+    create_backup_schedule,
+    list_backup_schedules,
+    get_backup_schedule,
+    update_backup_schedule,
+    delete_backup_schedule,
+)
 
 router = APIRouter()
 router.include_router(vnc_router, prefix="/vnc")
@@ -103,6 +115,7 @@ def api_vm_autostart(name: str, enable: bool, current_user: dict = Depends(get_c
     return {"status": "ok", "autostart": result}
 
 
+@router.post("/delete")
 @router.delete("/delete")
 def api_delete_vm(req: VMActionRequest, current_user: dict = Depends(get_current_user)):
     if not authorize_vm_access(req.name, current_user):
@@ -246,6 +259,22 @@ def api_backup_vm(req: VMBackupRequest, current_user: dict = Depends(get_current
     return {"status": "ok", "backup": result}
 
 
+@router.get("/backup/list/{name}")
+def api_list_backups(name: str, current_user: dict = Depends(get_current_user)):
+    if not authorize_vm_access(name, current_user):
+        raise ServiceError("Access denied", code="FORBIDDEN", http_status=403)
+    backups = list_backups_for_vm(name)
+    return {"status": "ok", "backups": backups}
+
+
+@router.delete("/backup/delete")
+def api_delete_backup(backup_dir: str, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("is_admin"):
+        raise ServiceError("Access denied", code="FORBIDDEN", http_status=403)
+    delete_backup(backup_dir)
+    return {"status": "ok", "message": "Backup deleted"}
+
+
 @router.post("/restore")
 def api_restore_vm(req: VMRestoreRequest, current_user: dict = Depends(get_current_user)):
     if not current_user.get("is_admin"):
@@ -284,6 +313,64 @@ def api_network_delete(name: str, current_user: dict = Depends(get_current_user)
         raise ServiceError("Access denied", code="FORBIDDEN", http_status=403)
     result = network_delete(name, host_uri)
     return {"status": "ok", "message": f"Network '{name}' deleted"}
+
+
+# ── Backup schedule (admin only) ──────────────────────────────────
+
+class BackupScheduleCreate(BaseModel):
+    vm_name: str
+    cron_expression: str
+    retention: int = 7
+
+class BackupScheduleUpdate(BaseModel):
+    cron_expression: Optional[str] = None
+    retention: Optional[int] = None
+    enabled: Optional[bool] = None
+
+
+@router.get("/backup/schedules")
+def api_list_backup_schedules(current_user: dict = Depends(get_current_user)):
+    if not current_user.get("is_admin"):
+        raise ServiceError("Access denied", code="FORBIDDEN", http_status=403)
+    return {"status": "ok", "schedules": list_backup_schedules()}
+
+
+@router.post("/backup/schedules")
+def api_create_backup_schedule(req: BackupScheduleCreate, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("is_admin"):
+        raise ServiceError("Access denied", code="FORBIDDEN", http_status=403)
+    try:
+        from croniter import croniter
+        if not croniter.is_valid(req.cron_expression):
+            raise ServiceError("Invalid cron expression", code="INVALID_CRON", http_status=400)
+    except ImportError:
+        pass
+    try:
+        sched = create_backup_schedule(req.vm_name, req.cron_expression, req.retention)
+        return {"status": "ok", "schedule": sched}
+    except ValueError as e:
+        raise ServiceError(str(e), code="SCHEDULE_EXISTS", http_status=409)
+
+
+@router.put("/backup/schedules/{schedule_id}")
+def api_update_backup_schedule(schedule_id: int, req: BackupScheduleUpdate, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("is_admin"):
+        raise ServiceError("Access denied", code="FORBIDDEN", http_status=403)
+    sched = update_backup_schedule(schedule_id, req.cron_expression, req.retention, req.enabled)
+    if not sched:
+        raise ServiceError("Schedule not found", code="NOT_FOUND", http_status=404)
+    return {"status": "ok", "schedule": sched}
+
+
+@router.delete("/backup/schedules/{schedule_id}")
+def api_delete_backup_schedule(schedule_id: int, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("is_admin"):
+        raise ServiceError("Access denied", code="FORBIDDEN", http_status=403)
+    sched = get_backup_schedule(schedule_id)
+    if not sched:
+        raise ServiceError("Schedule not found", code="NOT_FOUND", http_status=404)
+    delete_backup_schedule(schedule_id)
+    return {"status": "ok", "message": "Schedule deleted"}
 
 
 @router.get("/vnc/info/{name}")

@@ -7,7 +7,7 @@ class VMSpec(BaseModel):
     cpu: int
     memory_mb: int
     disk_gb: int
-    image: str
+    image: Optional[str] = None
     disk_path: Optional[str] = None
     iso_path: Optional[str] = None
     cloud_init_iso: Optional[str] = None

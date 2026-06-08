@@ -50,6 +50,16 @@ def init_db():
                 FOREIGN KEY (owner_id) REFERENCES users(id)
             );
 
+            CREATE TABLE IF NOT EXISTS backup_schedules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                vm_name TEXT NOT NULL UNIQUE,
+                cron_expression TEXT NOT NULL,
+                retention INTEGER DEFAULT 7,
+                enabled INTEGER DEFAULT 1,
+                last_run TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE INDEX IF NOT EXISTS idx_vm_owner ON vm_ownership(owner_id);
             CREATE INDEX IF NOT EXISTS idx_vm_name ON vm_ownership(vm_name);
         """)
@@ -183,6 +193,96 @@ def update_password(user_id: int, new_password: str) -> None:
     try:
         pw = hash_password(new_password)
         conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (pw, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ── Backup schedules ──────────────────────────────────────────────
+
+def create_backup_schedule(vm_name: str, cron_expression: str, retention: int = 7) -> dict:
+    conn = _get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO backup_schedules (vm_name, cron_expression, retention) VALUES (?, ?, ?)",
+            (vm_name, cron_expression, retention),
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "vm_name": vm_name, "cron_expression": cron_expression, "retention": retention, "enabled": 1}
+    except sqlite3.IntegrityError:
+        raise ValueError(f"Schedule for VM '{vm_name}' already exists")
+    finally:
+        conn.close()
+
+
+def list_backup_schedules() -> list[dict]:
+    conn = _get_conn()
+    try:
+        cur = conn.execute("SELECT * FROM backup_schedules ORDER BY vm_name")
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_backup_schedule(schedule_id: int) -> dict | None:
+    conn = _get_conn()
+    try:
+        cur = conn.execute("SELECT * FROM backup_schedules WHERE id = ?", (schedule_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def update_backup_schedule(schedule_id: int, cron_expression: str = None, retention: int = None, enabled: bool = None) -> dict | None:
+    conn = _get_conn()
+    try:
+        fields = []
+        params = []
+        if cron_expression is not None:
+            fields.append("cron_expression = ?")
+            params.append(cron_expression)
+        if retention is not None:
+            fields.append("retention = ?")
+            params.append(retention)
+        if enabled is not None:
+            fields.append("enabled = ?")
+            params.append(1 if enabled else 0)
+        if not fields:
+            return get_backup_schedule(schedule_id)
+        params.append(schedule_id)
+        conn.execute(f"UPDATE backup_schedules SET {', '.join(fields)} WHERE id = ?", params)
+        conn.commit()
+        return get_backup_schedule(schedule_id)
+    finally:
+        conn.close()
+
+
+def delete_backup_schedule(schedule_id: int) -> None:
+    conn = _get_conn()
+    try:
+        conn.execute("DELETE FROM backup_schedules WHERE id = ?", (schedule_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_enabled_backup_schedules() -> list[dict]:
+    conn = _get_conn()
+    try:
+        cur = conn.execute("SELECT * FROM backup_schedules WHERE enabled = 1")
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def update_backup_schedule_last_run(schedule_id: int) -> None:
+    conn = _get_conn()
+    try:
+        conn.execute(
+            "UPDATE backup_schedules SET last_run = CURRENT_TIMESTAMP WHERE id = ?",
+            (schedule_id,),
+        )
         conn.commit()
     finally:
         conn.close()

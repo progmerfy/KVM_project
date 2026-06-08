@@ -6,6 +6,20 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def create_blank_disk(vm_name: str, size_gb: int, dest_dir: str = "/var/lib/libvirt/images") -> str:
+    os.makedirs(dest_dir, exist_ok=True)
+    target = os.path.join(dest_dir, f"{vm_name}.qcow2")
+
+    if os.path.exists(target):
+        raise FileExistsError(f"target disk already exists: {target}")
+
+    subprocess.check_call([
+        "qemu-img", "create", "-f", "qcow2", target, f"{size_gb}G"
+    ])
+    logger.info("Created blank qcow2 disk: %s (%dG)", target, size_gb)
+    return target
+
+
 def prepare_disk(base_image: str, vm_name: str, size_gb: int) -> str:
     """Create a qcow2 copy based on base_image next to base_image.
 

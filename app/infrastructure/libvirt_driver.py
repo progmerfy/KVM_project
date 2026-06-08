@@ -507,6 +507,33 @@ def copy_disk_image(src: str, dst: str) -> None:
     raise LibvirtError(f"failed to copy disk image after 3 attempts")
 
 
+def network_leases(conn) -> list[dict]:
+    _check_libvirt()
+    leases = []
+    try:
+        nets = conn.listAllNetworks()
+        for net in nets:
+            if not net.isActive():
+                continue
+            try:
+                net_leases = net.DHCPLeases()
+                for lease in net_leases:
+                    leases.append({
+                        "network": net.name(),
+                        "ip": lease.get("ipaddr", ""),
+                        "mac": lease.get("mac", ""),
+                        "hostname": lease.get("hostname", "") or "",
+                        "prefix": lease.get("prefix", 24),
+                        "expirytime": lease.get("expirytime", 0),
+                        "type": lease.get("type", 0),
+                    })
+            except Exception:
+                continue
+        return leases
+    except libvirt.libvirtError as e:
+        raise LibvirtError(f"failed to list network leases: {e}")
+
+
 def close(conn) -> None:
     try:
         conn.close()

@@ -32,7 +32,10 @@ def create_vm(req: VMCreateRequest, owner_id: int = None) -> dict:
     cloud_init_iso_path = None
     root_password: Optional[str] = None
     try:
-        disk_path = storage.prepare_disk(spec.image, spec.name, spec.disk_gb)
+        if spec.image:
+            disk_path = storage.prepare_disk(spec.image, spec.name, spec.disk_gb)
+        else:
+            disk_path = storage.create_blank_disk(spec.name, spec.disk_gb, settings.storage_pool)
         spec.disk_path = disk_path
 
         if req.cloud_init_user_data or req.cloud_init_ssh_key:
@@ -589,6 +592,32 @@ def backup_vm(name: str, host_uri: str = None) -> dict:
             libvirt_driver.close(conn)
 
 
+def delete_backup(backup_dir: str) -> None:
+    import shutil
+    path = Path(backup_dir)
+    if path.exists() and path.is_dir():
+        shutil.rmtree(path)
+        logger.info("Deleted backup: %s", backup_dir)
+
+
+def list_backups_for_vm(name: str) -> list[dict]:
+    backup_root = Path(settings.storage_pool) / "backups"
+    if not backup_root.exists():
+        return []
+    results = []
+    for d in sorted(backup_root.iterdir(), reverse=True):
+        if d.is_dir() and d.name.startswith(f"{name}_"):
+            xml_files = list(d.glob("*.xml"))
+            disk_files = list(d.glob("*.qcow2"))
+            results.append({
+                "dir": str(d),
+                "timestamp": d.name.replace(f"{name}_", ""),
+                "xml": str(xml_files[0]) if xml_files else None,
+                "disks": [str(f) for f in disk_files],
+            })
+    return results
+
+
 def restore_vm(backup_dir: str, new_name: str = None, host_uri: str = None) -> dict:
     host = host_uri or settings.default_host_uri
     conn = libvirt_driver.connect(host)
@@ -656,6 +685,16 @@ def network_delete(name: str, host_uri: str = None) -> dict:
     try:
         libvirt_driver.network_delete(conn, name)
         return {"name": name}
+    finally:
+        if conn is not None:
+            libvirt_driver.close(conn)
+
+
+def get_network_leases(host_uri: str = None) -> list[dict]:
+    host = host_uri or settings.default_host_uri
+    conn = libvirt_driver.connect(host)
+    try:
+        return libvirt_driver.network_leases(conn)
     finally:
         if conn is not None:
             libvirt_driver.close(conn)

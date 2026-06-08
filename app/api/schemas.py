@@ -7,8 +7,8 @@ class VMCreateRequest(BaseModel):
     cpu: int = Field(1, ge=1, le=64)
     memory_mb: int = Field(512, ge=128, le=524288)
     disk_gb: int = Field(10, ge=1, le=10240)
-    image: str = Field(
-        ..., description="Path to base qcow2 image or template"
+    image: Optional[str] = Field(
+        None, description="Path to base qcow2 image (blank disk if omitted)"
     )
     iso_path: Optional[str] = Field(
         None, description="Path to ISO for OS installation"
