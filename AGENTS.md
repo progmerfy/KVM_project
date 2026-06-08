@@ -36,6 +36,7 @@ This file records aggregated context from previous coding sessions — goals, co
 - **Валидация формы создания ВМ**: красное предупреждение о незаполненных полях вместо disabled кнопки
 - **ISO-based создание ВМ**: поле ISO теперь первично, Image опционален; поле image использует полный путь; исправлен маппинг полей (ram→memory_mb, disk→disk_gb, iso→iso_path, ssh_key→cloud_init_ssh_key)
 - **Backend fallback для пути**: если image/iso_path — голое имя файла, ищется в `storage_pool`
+- **ISO репозиторий**: `ISO_REPO` в `image_manager.py` (Ubuntu/Debian/Fedora/CentOS/Rocky ISOs), `GET /images/repo/list` возвращает `type: "iso"/"cloud"` + `is_iso`, `POST /images/download-repo-iso` скачивает ISO в storage_pool, фронтенд Repo страница показывает ISOs с бейджем и отдельным обработчиком
 
 ### In Progress
 - *(none)*
