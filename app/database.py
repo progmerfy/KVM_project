@@ -60,8 +60,25 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                username TEXT NOT NULL,
+                action TEXT NOT NULL,
+                resource_type TEXT NOT NULL,
+                resource_name TEXT,
+                details TEXT,
+                ip_address TEXT,
+                success INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE INDEX IF NOT EXISTS idx_vm_owner ON vm_ownership(owner_id);
             CREATE INDEX IF NOT EXISTS idx_vm_name ON vm_ownership(vm_name);
+            CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
+            CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
+            CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
+            CREATE INDEX IF NOT EXISTS idx_audit_resource ON audit_log(resource_type, resource_name);
         """)
 
         # Add email column if missing (migration)
@@ -284,5 +301,42 @@ def update_backup_schedule_last_run(schedule_id: int) -> None:
             (schedule_id,),
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+# ── Audit log ──────────────────────────────────────────────────────
+
+def create_audit_log(user_id: int | None, username: str, action: str, resource_type: str, resource_name: str | None = None, details: str | None = None, ip_address: str | None = None, success: bool = True) -> dict:
+    conn = _get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO audit_log (user_id, username, action, resource_type, resource_name, details, ip_address, success) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (user_id, username, action, resource_type, resource_name, details, ip_address, 1 if success else 0),
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "user_id": user_id, "username": username, "action": action, "resource_type": resource_type, "resource_name": resource_name, "details": details, "ip_address": ip_address, "success": success}
+    finally:
+        conn.close()
+
+
+def list_audit_logs(limit: int = 100, offset: int = 0, user_id: int | None = None, action: str | None = None, resource_type: str | None = None) -> list[dict]:
+    conn = _get_conn()
+    try:
+        query = "SELECT * FROM audit_log WHERE 1=1"
+        params: list = []
+        if user_id is not None:
+            query += " AND user_id = ?"
+            params.append(user_id)
+        if action:
+            query += " AND action = ?"
+            params.append(action)
+        if resource_type:
+            query += " AND resource_type = ?"
+            params.append(resource_type)
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        cur = conn.execute(query, params)
+        return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()

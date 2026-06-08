@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api import vm_routes, image_routes, host_routes, auth_routes
+from app.api import vm_routes, image_routes, host_routes, auth_routes, audit_routes
 from app.config import settings
 from app.errors import AppError
 from app.auth import require_auth
@@ -1515,6 +1515,7 @@ app.include_router(auth_routes.router, prefix="/auth")
 app.include_router(vm_routes.router, prefix="/vm")
 app.include_router(image_routes.router, prefix="/images")
 app.include_router(host_routes.router, prefix="/host")
+app.include_router(audit_routes.router, prefix="/audit")
 
 if __name__ == "__main__":
     import uvicorn
