@@ -30,6 +30,12 @@ This file records aggregated context from previous coding sessions — goals, co
 - **Все 84 теста проходят** (44 comprehensive + 40 integration)
 - **Починена `set_vm_autostart`**: libvirtError при отсутствующей ВМ теперь возвращает 404 вместо 500
 - **Установлен croniter**: валидация cron-выражений работает в тестах
+- **Починены `start_vm`/`delete_vm`**: возвращают 404 вместо 503 при отсутствующей ВМ (проверка `conn.lookupByName` в `vm_manager.py`)
+- **Аудит-лог не маскирует ошибки**: `_audit_log` wrapper ловит `Exception` и пишет warning вместо падения запроса (`vm_routes.py`, `auth_routes.py`)
+- **Починено удаление ВМ со снепшотами**: `undefine_vm` использует `undefineFlags(VIR_DOMAIN_UNDEFINE_SNAPSHOTS_METADATA)` вместо `undefine()`
+- **Валидация формы создания ВМ**: красное предупреждение о незаполненных полях вместо disabled кнопки
+- **ISO-based создание ВМ**: поле ISO теперь первично, Image опционален; поле image использует полный путь; исправлен маппинг полей (ram→memory_mb, disk→disk_gb, iso→iso_path, ssh_key→cloud_init_ssh_key)
+- **Backend fallback для пути**: если image/iso_path — голое имя файла, ищется в `storage_pool`
 
 ### In Progress
 - *(none)*

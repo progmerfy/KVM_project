@@ -50,6 +50,7 @@ export default function Dashboard({ page, selectedVM, navigate, user, addToast, 
   const [createForm, setCreateForm] = useState({
     name: '', image: '', cpu: 1, ram: 1024, disk: 10, iso: '', ssh_key: '',
   });
+  const [validationError, setValidationError] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [backupLoading, setBackupLoading] = useState(false);
   const [deletingBackup, setDeletingBackup] = useState<string | null>(null);
@@ -193,14 +194,28 @@ export default function Dashboard({ page, selectedVM, navigate, user, addToast, 
   };
 
   const handleCreate = async () => {
-    if (!createForm.name) return;
+    const errs: string[] = [];
+    if (!createForm.name.trim()) errs.push('VM Name is required');
+    if (!createForm.image && !createForm.iso) errs.push('Select an Image or an ISO');
+    if (errs.length) { setValidationError(errs.join('. ')); return; }
+    setValidationError('');
     setActionLoading('create');
     try {
-      await createVM(createForm);
+      const payload = {
+        name: createForm.name.trim(),
+        cpu: createForm.cpu,
+        memory_mb: createForm.ram,
+        disk_gb: createForm.disk,
+        image: createForm.image || null,
+        iso_path: createForm.iso || null,
+        cloud_init_ssh_key: createForm.ssh_key || null,
+      };
+      await createVM(payload);
       recordActivity('create', createForm.name);
       addToast(`VM ${createForm.name} created`, 'success');
       setShowCreate(false);
       setCreateForm({ name: '', image: '', cpu: 1, ram: 1024, disk: 10, iso: '', ssh_key: '' });
+      setValidationError('');
       loadData();
     } catch (e: any) {
       addToast(e.message || 'Create failed', 'error');
@@ -757,13 +772,21 @@ export default function Dashboard({ page, selectedVM, navigate, user, addToast, 
             <div className="create-form">
               <label>VM Name</label>
               <input type="text" placeholder="my-vm" value={createForm.name}
-                onChange={e => setCreateForm({ ...createForm, name: e.target.value })} />
-              <label>Image</label>
+                onChange={e => { setCreateForm({ ...createForm, name: e.target.value }); setValidationError(''); }} />
+              <label>ISO (for OS installation)</label>
+              <select value={createForm.iso}
+                onChange={e => { setCreateForm({ ...createForm, iso: e.target.value }); setValidationError(''); }}>
+                <option value="">Select ISO...</option>
+                {images.filter(i => i.name.endsWith('.iso')).map(img => (
+                  <option key={img.name} value={img.path || img.name}>{img.name}</option>
+                ))}
+              </select>
+              <label>Disk Image (optional — blank disk if omitted)</label>
               <select value={createForm.image}
-                onChange={e => setCreateForm({ ...createForm, image: e.target.value })}>
-                <option value="">Select image...</option>
-                {images.map(img => (
-                  <option key={img.name} value={img.name}>{img.name}</option>
+                onChange={e => { setCreateForm({ ...createForm, image: e.target.value }); setValidationError(''); }}>
+                <option value="">None (blank disk)</option>
+                {images.filter(i => !i.name.endsWith('.iso')).map(img => (
+                  <option key={img.name} value={img.path || img.name}>{img.name}</option>
                 ))}
               </select>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -781,23 +804,20 @@ export default function Dashboard({ page, selectedVM, navigate, user, addToast, 
               <label>Disk Size (GB)</label>
               <input type="number" min={1} value={createForm.disk}
                 onChange={e => setCreateForm({ ...createForm, disk: parseInt(e.target.value) || 10 })} />
-              <label>ISO (optional)</label>
-              <select value={createForm.iso}
-                onChange={e => setCreateForm({ ...createForm, iso: e.target.value })}>
-                <option value="">None</option>
-                {images.filter(i => i.name.endsWith('.iso')).map(img => (
-                  <option key={img.name} value={img.name}>{img.name}</option>
-                ))}
-              </select>
               <label>SSH Public Key (optional)</label>
               <textarea rows={3} placeholder="ssh-rsa ..." value={createForm.ssh_key}
                 onChange={e => setCreateForm({ ...createForm, ssh_key: e.target.value })} />
+              {validationError && (
+                <div style={{ color: '#ef4444', fontSize: 13, marginTop: 8, padding: '8px 12px', background: 'rgba(239,68,68,0.08)', borderRadius: 6 }}>
+                  {validationError}
+                </div>
+              )}
             </div>
             <div className="confirm-btns">
-              <button className="btn btn-ghost" onClick={() => setShowCreate(false)}>Cancel</button>
+              <button className="btn btn-ghost" onClick={() => { setShowCreate(false); setValidationError(''); }}>Cancel</button>
               <button className={`btn btn-primary ${actionLoading === 'create' ? 'loading' : ''}`}
-                disabled={!createForm.name || !createForm.image || actionLoading === 'create'}
-                onClick={handleCreate}>Create VM</button>
+                disabled={actionLoading === 'create'}
+                onClick={handleCreate}>{actionLoading === 'create' ? 'Creating...' : 'Create VM'}</button>
             </div>
           </div>
         </div>

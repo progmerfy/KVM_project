@@ -122,10 +122,10 @@ def test_undefine_vm_destroy_and_undefine(fake_libvirt):
         conn = driver.connect("qemu:///system")
         driver.undefine_vm(conn, "vm_active")
         assert dom_active.destroy.called
-        assert dom_active.undefine.called
+        assert dom_active.undefineFlags.called
 
         driver.undefine_vm(conn, "vm_inactive")
-        assert dom_inactive.undefine.called
+        assert dom_inactive.undefineFlags.called
 
 
 def test_destroy_vm(fake_libvirt):

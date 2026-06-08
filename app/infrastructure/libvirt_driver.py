@@ -110,16 +110,17 @@ def undefine_vm(conn, domain_name: str, remove_storage: bool = True) -> None:
         dom = conn.lookupByName(domain_name)
         if dom.isActive() == 1:
             dom.destroy()
+        flags = libvirt.VIR_DOMAIN_UNDEFINE_SNAPSHOTS_METADATA
         if remove_storage:
             disks = _get_disk_paths(dom)
-            dom.undefine()
+            dom.undefineFlags(flags)
             for disk in disks:
                 try:
                     _remove_storage(disk)
                 except Exception as e:
                     logger.warning("Failed to remove disk %s: %s", disk, e)
         else:
-            dom.undefineFlags(0)
+            dom.undefineFlags(flags)
     except libvirt.libvirtError as e:
         raise LibvirtError(str(e))
 

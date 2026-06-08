@@ -18,6 +18,13 @@ from app.database import (
 
 logger = logging.getLogger(__name__)
 
+
+def _audit_log(*args, **kwargs):
+    try:
+        create_audit_log(*args, **kwargs)
+    except Exception as e:
+        logger.warning("audit log failed: %s", e)
+
 router = APIRouter()
 
 
@@ -56,13 +63,13 @@ def login(req: LoginRequest, request: Request = None):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     if not user or not verify_password(req.password, user["password_hash"]):
-        create_audit_log(None, req.username, "login", "auth", "login", success=False, ip_address=request.client.host if request and request.client else None)
+        _audit_log(None, req.username, "login", "auth", "login", success=False, ip_address=request.client.host if request and request.client else None)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
         )
     token = create_access_token({"sub": user["username"], "user_id": user["id"]})
-    create_audit_log(user["id"], user["username"], "login", "auth", "login", success=True, ip_address=request.client.host if request and request.client else None)
+    _audit_log(user["id"], user["username"], "login", "auth", "login", success=True, ip_address=request.client.host if request and request.client else None)
     logger.info("User '%s' logged in via '%s'", user["username"], req.username)
     return TokenResponse(access_token=token)
 
@@ -76,12 +83,12 @@ def verify(auth: dict = Depends(require_auth)):
 def register(req: RegisterRequest, request: Request = None):
     try:
         user = create_user(req.username, req.password, is_admin=False, email=req.email)
-        create_audit_log(user["id"], user["username"], "register", "auth", req.username, success=True, ip_address=request.client.host if request and request.client else None)
+        _audit_log(user["id"], user["username"], "register", "auth", req.username, success=True, ip_address=request.client.host if request and request.client else None)
         logger.info("User '%s' registered", req.username)
         token = create_access_token({"sub": user["username"], "user_id": user["id"]})
         return TokenResponse(access_token=token)
     except ValueError as e:
-        create_audit_log(None, req.username, "register", "auth", req.username, success=False, details=str(e), ip_address=request.client.host if request and request.client else None)
+        _audit_log(None, req.username, "register", "auth", req.username, success=False, details=str(e), ip_address=request.client.host if request and request.client else None)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
 
@@ -127,13 +134,13 @@ def me(current_user: dict = Depends(get_current_user)):
 def change_password(req: ChangePasswordRequest, current_user: dict = Depends(get_current_user), request: Request = None):
     user = get_user_by_login(current_user["username"])
     if not user or not verify_password(req.current_password, user["password_hash"]):
-        create_audit_log(current_user["id"], current_user["username"], "change_password", "auth", current_user["username"], success=False, ip_address=request.client.host if request and request.client else None)
+        _audit_log(current_user["id"], current_user["username"], "change_password", "auth", current_user["username"], success=False, ip_address=request.client.host if request and request.client else None)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Current password is incorrect",
         )
     update_password(current_user["id"], req.new_password)
-    create_audit_log(current_user["id"], current_user["username"], "change_password", "auth", current_user["username"], success=True, ip_address=request.client.host if request and request.client else None)
+    _audit_log(current_user["id"], current_user["username"], "change_password", "auth", current_user["username"], success=True, ip_address=request.client.host if request and request.client else None)
     logger.info("Password changed for user '%s'", current_user["username"])
     return {"status": "ok"}
 

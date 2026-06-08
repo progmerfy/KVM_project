@@ -1,5 +1,6 @@
 import logging
 import html
+import os
 import secrets
 import string
 from pathlib import Path
@@ -17,14 +18,33 @@ logger = logging.getLogger(__name__)
 
 
 def create_vm(req: VMCreateRequest, owner_id: int = None) -> dict:
+    if not req.name:
+        raise ServiceError("VM name is required", code="VALIDATION_ERROR", http_status=400)
+    if not req.image and not req.iso_path:
+        raise ServiceError("Either 'image' or 'iso_path' must be provided", code="VALIDATION_ERROR", http_status=400)
+
     host = req.host_uri or settings.default_host_uri
+
+    # Resolve bare filename to full path
+    image = req.image
+    if image and os.sep not in image:
+        candidate = os.path.join(settings.storage_pool, image)
+        if os.path.exists(candidate):
+            image = candidate
+
+    iso_path = req.iso_path
+    if iso_path and os.sep not in iso_path:
+        candidate = os.path.join(settings.storage_pool, iso_path)
+        if os.path.exists(candidate):
+            iso_path = candidate
+
     spec = VMSpec(
         name=req.name,
         cpu=req.cpu,
         memory_mb=req.memory_mb,
         disk_gb=req.disk_gb,
-        image=req.image,
-        iso_path=req.iso_path,
+        image=image,
+        iso_path=iso_path,
         network=req.network or "default",
     )
 
@@ -125,6 +145,10 @@ def start_vm(req: VMActionRequest) -> None:
     host = req.host_uri or settings.default_host_uri
     conn = libvirt_driver.connect(host)
     try:
+        try:
+            conn.lookupByName(req.name)
+        except Exception:
+            raise ServiceError(f"VM '{req.name}' not found", code="VM_NOT_FOUND", http_status=404)
         libvirt_driver.start_vm(conn, req.name)
         logger.info("VM '%s' started", req.name)
     finally:
@@ -186,7 +210,13 @@ def delete_vm(req: VMActionRequest) -> None:
     conn = libvirt_driver.connect(host)
     logger.info("Deleting VM '%s' on host %s", req.name, host)
     try:
+        try:
+            conn.lookupByName(req.name)
+        except Exception:
+            raise ServiceError(f"VM '{req.name}' not found", code="VM_NOT_FOUND", http_status=404)
         libvirt_driver.stop_vm(conn, req.name)
+    except ServiceError:
+        raise
     except Exception:
         logger.exception("Error stopping VM '%s' before undefine", req.name)
     try:
