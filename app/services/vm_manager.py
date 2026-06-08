@@ -169,7 +169,10 @@ def set_vm_autostart(name: str, enable: bool, host_uri: str = None) -> bool:
     host = host_uri or settings.default_host_uri
     conn = libvirt_driver.connect(host)
     try:
-        dom = conn.lookupByName(name)
+        try:
+            dom = conn.lookupByName(name)
+        except Exception:
+            raise ServiceError(f"VM '{name}' not found", code="VM_NOT_FOUND", http_status=404)
         dom.setAutostart(1 if enable else 0)
         logger.info("VM '%s' autostart set to %s", name, enable)
         return enable

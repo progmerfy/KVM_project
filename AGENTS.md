@@ -1,29 +1,35 @@
 This file records aggregated context from previous coding sessions — goals, constraints, progress, key decisions, and relevant file paths. It is updated at the end of each session so subsequent sessions start with full context.
 
 ## Goal
-- Запустить KVM/libvirt проект в Docker, проанализировать ошибки с визуалом и добавить отображение сети/IP в дашборд
+- Завершить миграцию с embedded HTML на Vite/React/TypeScript фронтенд; добавить аудит, guest-agent, runbook_url, HTTPS; написать тесты
 
 ## Constraints & Preferences
-- Запуск через `docker-compose`
-- UI должен корректно отображать сетевые интерфейсы, DHCP leases и образы репозитория
+- Все изменения в ветке `fix/thesis-discrepancies`
+- Аудит-лог пишется синхронно в SQLite, доступен админу через `GET /audit/logs`
+- IP гостя запрашивается через `dom.interfaceAddresses(AGENT)`, guest-agent канал в XML новых ВМ
+- Ошибки API возвращают `code`, `message`, `details`, `runbook_url`
+- HTTPS порт 8443 (самоподписанный сертификат), HTTP порт 8000 legacy
+- React-фронтенд собирается в multi-stage Docker build, раздаётся из `/app/frontend-dist/`
+- При отсутствии React build используется embedded `_APP_HTML` как fallback
+- Все тесты должны проходить перед мержем
 
 ## Progress
 ### Done
-- Собран образ и запущен контейнер `kvm-mgr-app` через `docker-compose up -d app`
-- Проверены эндпоинты: `/health`, `/host/info`, `/host/stats`, `/vm/list`, `/images/list`, `/auth/login` — все работают
-  - Все 57 тестов проходят (57 passed, 8 warnings)
-- В бэкенд добавлен `network_leases()` (`app/infrastructure/libvirt_driver.py`), `get_network_leases()` (`app/services/vm_manager.py`), эндпоинт `GET /host/networks` (`app/api/host_routes.py`) — возвращает список сетей и DHCP leases (проверено: 2 сети, 1 lease)
-- В дашборд добавлен блок **Network Interfaces** (сетки и таблица аренды IP) в `app/main.py` (JS-функции `netTable()`, `leaseTable()`)
-- Исправлена вкладка **Repo Images**: в `loadRepoImages()` добавлены `e.preventDefault()` и `return false`
-- Исправлены вкладка **ISOs** и кнопки **Upload ISO**/**Download from URL**: добавлены `e.preventDefault()` и `return false` для `loadISOs`, `loadSettings`, `showUploadIsoDialog`, `showDownloadIsoDialog`
-- Добавлен **Backup scheduler** (фоновый поток с cron):
-  - таблица `backup_schedules` в БД (CRUD через `database.py`)
-  - API `GET/POST/PUT/DELETE /vm/backup/schedules` (`vm_routes.py`)
-  - фоновый шедулер в `main.py` (проверка крона каждые 60 сек, запуск `backup_vm()`)
-- Обогащена страница **Settings**:
-  - секция **Host Info** (CPU/архитектура/память)
-  - секция **Storage** (пул/использовано/свободно)
-  - секция **Backup Schedules** (добавить/редактировать/удалить расписания)
+- **runbook_url**: `AppError` + словарь `RUNBOOK_URLS`, `details` и `runbook_url` в JSON-ответе
+- **Guest agent**: `guest_agent_ip()` через `VIR_DOMAIN_INTERFACE_ADDRESSES_SOURCE_AGENT`, поле `guest_ip` в `get_vm_info()`/`list_vms()`, канал `org.qemu.guest_agent.0` в XML новых ВМ
+- **Аудит**: таблица `audit_log`, `GET /audit/logs` (admin), интеграция во все key endpoints
+- **HTTPS**: самоподписанный сертификат `certs/kvm-mgr.{key,crt}`, порт 8443, SSL env vars
+- **React-фронтенд**: Vite + React + TypeScript, все страницы (Dashboard, Settings, AuditLog, ISOs, VMDetail)
+- **Multi-stage Dockerfile**: React собирается в `node:20-slim`, копируется в `/app/frontend-dist/`
+- **Static serving**: `index.html` из `/app/frontend-dist/` (fallback `_APP_HTML`), `/assets` из `/app/frontend-dist/assets/`
+- **Поправлен баг snapshot `created`**: поле содержало полный XML вместо даты — `_extract_creation_time()` парсит `<creationTime>`
+- **Поправлен баг Scheduler UI**: кнопка «+ Add Schedule» показывает форму через `showSchedForm` state
+- **Loading-индикаторы**: `backupLoading`/`deletingBackup`/`snapLoading` для долгих операций
+- **44 comprehensive теста**: auth (me/verify/register/admin/duplicate/unauthorized), backup schedules CRUD, audit log (filters + admin-only), host networks, VM backup list/delete, VM autostart, image upload/download/repo, network list, error structure, snapshot time extraction, clone VM, ownership access control
+- **40 integration тестов**: create/start/stop/delete/attach-disk/health/images/host/vnc/snapshot/network/auth/export-import/clone/backup-restore/metrics
+- **Все 84 теста проходят** (44 comprehensive + 40 integration)
+- **Починена `set_vm_autostart`**: libvirtError при отсутствующей ВМ теперь возвращает 404 вместо 500
+- **Установлен croniter**: валидация cron-выражений работает в тестах
 
 ### In Progress
 - *(none)*
@@ -32,26 +38,34 @@ This file records aggregated context from previous coding sessions — goals, co
 - *(none)*
 
 ## Key Decisions
-- Сетевой эндпоинт `/host/networks` объединён (сети + leases в одном ответе), чтобы фронтенд делал один запрос
-- Все `onclick` функции в боковом меню должны вызывать `e.preventDefault()` (если есть event) **и** возвращать `false`
+- Аудит синхронно в SQLite (достаточно для single-node)
+- Guest agent IP через `interfaceAddresses(AGENT)` — безопасный вызов, не падает при отсутствии qemu-ga
+- `runbook_url` автоподставляется из словаря по коду ошибки
+- React-фронтенд — замена embedded HTML, dev-режим с прокси к `:8000` через Vite
+- Snapshot `created` — извлечение unix-таймстампа из XML → ISO datetime (не полный XML)
+- Loading-индикаторы через отдельные state-переменные
+- TestClient из conftest.py переопределяет `get_current_user` → admin; тесты для non-admin/unauthorized временно меняют `app.dependency_overrides`
 
 ## Next Steps
-- Исправить предупреждения: мигрировать `on_event` на `lifespan`, увеличить JWT_SECRET_KEY до 32+ байт, поправить `DB_PATH` по умолчанию
-- Добавить экранирование имён VM/образов в шаблонных строках UI (XSS-потенциал)
+- Исправить предупреждения: мигрировать `on_event` на lifespan, увеличить JWT_SECRET_KEY до 32+ байт, поправить `DB_PATH` по умолчанию
+- Выполнить `git checkout master && git merge fix/thesis-discrepancies` после подтверждения
 
 ## Critical Context
-- **Deprecation**: `@app.on_event("startup")` — заменить на lifespan
-- **JWT**: `HMAC key is 23 bytes` — ключ `"change-me-in-production"` короче 32 байт
-- **DB_PATH**: по умолчанию `/data/kvm_manager.db` — директория `/data` может не существовать
-- API `/images/repo/list` публичный (без auth), остальные закрыты `Bearer` токеном
-- libvirt-python установлен, сокет `/var/run/libvirt/libvirt-sock` доступен
+- **Бранч**: `fix/thesis-discrepancies`
+- **DB_PATH**: `/data/kvm_manager.db` — SQLite
+- **croniter>=1.3.0** в `requirements.txt` — валидация cron-выражений
+- **libvirt-python** — системный пакет, сокет `/var/run/libvirt/libvirt-sock`
+- **84 теста проходят**: 44 comprehensive + 40 integration
 
 ## Relevant Files
-- `docker-compose.yml`: сборка и запуск сервисов app/tests
-- `app/main.py`: FastAPI-приложение, вся фронтенд-логика (JS + HTML), роутеры
-- `app/infrastructure/libvirt_driver.py`: `network_leases()` — получение DHCP leases всех сетей
-- `app/services/vm_manager.py`: `get_network_leases()` — обёртка над libvirt_driver
-- `app/api/host_routes.py`: эндпоинт `GET /host/networks` (сети + leases)
-- `app/services/image_manager.py`: список и скачивание облачных образов
-- `app/api/image_routes.py`: роуты `/images/repo/list`, `/images/download-cloud` и др.
-- `app/auth.py`: JWT-аутентификация, `SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-in-production")`
+- `app/errors.py`: `RUNBOOK_URLS`, `AppError` с `runbook_url`
+- `app/database.py`: `audit_log` таблица, `create_audit_log()`, `list_audit_logs()`
+- `app/api/audit_routes.py`: `GET /audit/logs` (admin, фильтры)
+- `app/api/vm_routes.py`: аудит во всех key endpoints
+- `app/api/auth_routes.py`: аудит login/register/change_password
+- `app/infrastructure/libvirt_driver.py`: `guest_agent_ip()`, `_extract_creation_time()`
+- `app/services/vm_manager.py`: `set_vm_autostart()` — 404 при libvirtError
+- `tests/test_comprehensive.py`: 44 теста с манипуляцией dependency_overrides
+- `tests/test_integration_api.py`: 40 существующих тестов
+- `tests/conftest.py`: переопределение `get_current_user` → admin
+- `frontend/`: React-фронтенд (Vite + TypeScript)

@@ -218,12 +218,21 @@ def snapshot_list(conn, domain_name: str) -> list[dict]:
         return [
             {
                 "name": s.getName(),
-                "created": s.getXMLDesc(0),
+                "created": _extract_creation_time(s.getXMLDesc(0)),
             }
             for s in snaps
         ]
     except libvirt.libvirtError as e:
         raise LibvirtError(f"failed to list snapshots: {e}")
+
+
+def _extract_creation_time(xml: str) -> str:
+    import re, datetime
+    m = re.search(r"<creationTime>(\d+)</creationTime>", xml)
+    if m:
+        ts = int(m.group(1))
+        return datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).isoformat()
+    return ""
 
 
 def snapshot_revert(conn, domain_name: str, snap_name: str) -> None:

@@ -51,6 +51,9 @@ export default function Dashboard({ page, selectedVM, navigate, user, addToast, 
     name: '', image: '', cpu: 1, ram: 1024, disk: 10, iso: '', ssh_key: '',
   });
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [deletingBackup, setDeletingBackup] = useState<string | null>(null);
+  const [snapLoading, setSnapLoading] = useState<string | null>(null);
 
   const [repoFamilies, setRepoFamilies] = useState<RepoFamilies | null>(null);
   const [repoLoading, setRepoLoading] = useState(false);
@@ -498,18 +501,23 @@ export default function Dashboard({ page, selectedVM, navigate, user, addToast, 
                   <span className="label">{s.name}</span>
                   <span className="value" style={{ display: 'flex', gap: 6 }}>
                     <span style={{ fontSize: 11, color: '#71717a' }}>{s.created || ''}</span>
-                    <a href="#" style={{ fontSize: 12, color: '#60a5fa' }}
+                    <a href="#" style={{ fontSize: 12, color: snapLoading === s.name ? '#71717a' : '#60a5fa' }}
                       onClick={e => { e.preventDefault();
-                        if (confirm('Revert to snapshot ' + s.name + '?'))
-                          revertSnapshot(selectedVM, s.name).then(() => addToast('Reverted', 'success')).catch(e => addToast(e.message, 'error'));
-                      }}>Revert</a>
-                    <a href="#" style={{ fontSize: 12, color: '#ef4444' }}
+                        if (snapLoading) return;
+                        if (confirm('Revert to snapshot ' + s.name + '?')) {
+                          setSnapLoading(s.name);
+                          revertSnapshot(selectedVM, s.name).then(() => addToast('Reverted', 'success')).catch(e => addToast(e.message, 'error')).finally(() => setSnapLoading(null));
+                        }
+                      }}>{snapLoading === s.name ? 'Reverting...' : 'Revert'}</a>
+                    <a href="#" style={{ fontSize: 12, color: snapLoading === s.name ? '#71717a' : '#ef4444' }}
                       onClick={e => { e.preventDefault();
+                        if (snapLoading) return;
+                        setSnapLoading(s.name);
                         deleteSnapshot(selectedVM, s.name).then(() => {
                           addToast('Snapshot deleted', 'success');
                           listSnapshots(selectedVM).then(r => setSnapshots(r.snapshots)).catch(() => { });
-                        }).catch(e => addToast(e.message, 'error'));
-                      }}>Delete</a>
+                        }).catch(e => addToast(e.message, 'error')).finally(() => setSnapLoading(null));
+                      }}>{snapLoading === s.name ? 'Deleting...' : 'Delete'}</a>
                   </span>
                 </div>
               ))
@@ -517,13 +525,17 @@ export default function Dashboard({ page, selectedVM, navigate, user, addToast, 
           </div>
           <div className="detail-section">
             <h3>Backups</h3>
-            <button className="btn btn-primary" style={{ marginBottom: 12, padding: '6px 14px', fontSize: 12 }}
+            <button className={`btn btn-primary ${backupLoading ? 'loading' : ''}`}
+              style={{ marginBottom: 12, padding: '6px 14px', fontSize: 12 }}
+              disabled={backupLoading}
               onClick={async () => {
+                setBackupLoading(true);
                 try {
                   await createBackup(selectedVM);
                   addToast('Backup started', 'success');
                   listBackups(selectedVM).then(r => setBackups(r.backups)).catch(() => { });
                 } catch (e: any) { addToast(e.message || 'Failed', 'error'); }
+                setBackupLoading(false);
               }}>Create Backup</button>
             {backups.length === 0 ? (
               <div style={{ color: '#71717a', fontSize: 13 }}>No backups</div>
@@ -533,13 +545,15 @@ export default function Dashboard({ page, selectedVM, navigate, user, addToast, 
                   <span className="label">{b.dir || b.timestamp}</span>
                   <span className="value">
                     <span style={{ fontSize: 11, color: '#71717a', marginRight: 8 }}>{b.timestamp}</span>
-                    <a href="#" style={{ fontSize: 12, color: '#ef4444' }}
+                    <a href="#" style={{ fontSize: 12, color: deletingBackup === b.dir ? '#71717a' : '#ef4444' }}
                       onClick={e => { e.preventDefault();
+                        if (deletingBackup) return;
+                        setDeletingBackup(b.dir);
                         deleteBackup(b.dir).then(() => {
                           addToast('Backup deleted', 'success');
                           listBackups(selectedVM).then(r => setBackups(r.backups)).catch(() => { });
-                        }).catch(e => addToast(e.message, 'error'));
-                      }}>Delete</a>
+                        }).catch(e => addToast(e.message, 'error')).finally(() => setDeletingBackup(null));
+                      }}>{deletingBackup === b.dir ? 'Deleting...' : 'Delete'}</a>
                   </span>
                 </div>
               ))

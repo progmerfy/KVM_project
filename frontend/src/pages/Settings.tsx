@@ -25,6 +25,7 @@ export default function Settings({ user, addToast }: Props) {
   const [pwLoading, setPwLoading] = useState(false);
 
   const [editSched, setEditSched] = useState<BackupSchedule | null>(null);
+  const [showSchedForm, setShowSchedForm] = useState(false);
   const [schedForm, setSchedForm] = useState({ vm_name: '', cron_expression: '0 */6 * * *', retention: 3 });
   const [schedLoading, setSchedLoading] = useState(false);
 
@@ -70,6 +71,7 @@ export default function Settings({ user, addToast }: Props) {
         addToast('Schedule created', 'success');
       }
       setEditSched(null);
+      setShowSchedForm(false);
       setSchedForm({ vm_name: '', cron_expression: '0 */6 * * *', retention: 3 });
       await refreshSchedules();
     } catch (e: any) {
@@ -219,7 +221,7 @@ export default function Settings({ user, addToast }: Props) {
 
             <div className="detail-section">
               <h3>Backup Schedules</h3>
-              {editSched && (
+              {showSchedForm && (
                 <div style={{ marginBottom: 16, padding: 16, background: '#0a0a0f', borderRadius: 8, border: '1px solid #1e1e32' }}>
                   <h4 style={{ fontSize: 14, marginBottom: 12 }}>{editSched ? 'Edit Schedule' : 'New Schedule'}</h4>
                   <div>
@@ -242,6 +244,7 @@ export default function Settings({ user, addToast }: Props) {
                       onClick={handleSaveSchedule} disabled={schedLoading}>Save</button>
                     <button className="btn btn-ghost" onClick={() => {
                       setEditSched(null);
+                      setShowSchedForm(false);
                       setSchedForm({ vm_name: '', cron_expression: '0 */6 * * *', retention: 3 });
                     }}>Cancel</button>
                   </div>
@@ -250,6 +253,7 @@ export default function Settings({ user, addToast }: Props) {
               <button className="btn btn-primary" style={{ marginBottom: 12, padding: '6px 14px', fontSize: 12 }}
                 onClick={() => {
                   setEditSched(null);
+                  setShowSchedForm(true);
                   setSchedForm({ vm_name: '', cron_expression: '0 */6 * * *', retention: 3 });
                 }}>+ Add Schedule</button>
               <table className="leases-table" style={{ width: '100%' }}>
@@ -270,6 +274,7 @@ export default function Settings({ user, addToast }: Props) {
                             onClick={e => {
                               e.preventDefault();
                               setEditSched(s);
+                              setShowSchedForm(true);
                               setSchedForm({ vm_name: s.vm_name, cron_expression: s.cron_expression, retention: s.retention });
                             }}>Edit</a>
                           <a href="#" style={{ fontSize: 12, color: '#ef4444' }}
