@@ -16,6 +16,7 @@ export default defineConfig({
       '/images': 'http://localhost:8000',
       '/audit': 'http://localhost:8000',
       '/health': 'http://localhost:8000',
+      '/static': 'http://localhost:8000',
     },
   },
 })

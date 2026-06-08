@@ -9,6 +9,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from pathlib import Path
+
 from app.api import vm_routes, image_routes, host_routes, auth_routes, audit_routes
 from app.config import settings
 from app.errors import AppError
@@ -1514,6 +1516,10 @@ static_dir = os.path.join(os.path.dirname(__file__), "..", "frontend-dist")
 assets_dir = os.path.join(static_dir, "assets")
 if os.path.isdir(assets_dir):
     app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+novnc_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(novnc_dir):
+    app.mount("/static", StaticFiles(directory=novnc_dir), name="static")
 
 app.include_router(auth_routes.router, prefix="/auth")
 app.include_router(vm_routes.router, prefix="/vm")

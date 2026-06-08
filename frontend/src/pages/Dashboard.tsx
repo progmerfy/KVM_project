@@ -459,7 +459,7 @@ export default function Dashboard({ page, selectedVM, navigate, user, addToast, 
               <button className="btn btn-primary" onClick={() => handleVMAction(vmDetail.name, 'start')}>Start</button>
             )}
             {vmDetail.state === 'running' && (
-              <button className="btn btn-ghost" onClick={() => window.open('/vnc.html?vm=' + encodeURIComponent(vmDetail.name), '_blank')}>Console</button>
+              <button className="btn btn-ghost" onClick={() => window.open('/vm/vnc/console/' + encodeURIComponent(vmDetail.name), '_blank')}>Console</button>
             )}
             <button className="btn btn-ghost" onClick={() => { setCloneSource(vmDetail.name); setCloneName(''); setShowClone(true); }}>Clone</button>
             <button className="btn btn-ghost" style={{ color: '#ef4444' }} onClick={() => handleVMAction(vmDetail.name, 'delete')}>Delete</button>
@@ -695,7 +695,7 @@ export default function Dashboard({ page, selectedVM, navigate, user, addToast, 
                       )}
                       {vm.state === 'running' && (
                         <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 12 }}
-                          onClick={() => window.open('/vnc.html?vm=' + encodeURIComponent(vm.name), '_blank')}>Console</button>
+                          onClick={() => window.open('/vm/vnc/console/' + encodeURIComponent(vm.name), '_blank')}>Console</button>
                       )}
                       <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 12 }}
                         onClick={() => { setCloneSource(vm.name); setCloneName(''); setShowClone(true); }}>Clone</button>
