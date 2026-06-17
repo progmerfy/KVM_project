@@ -29,7 +29,27 @@ def verify_password(password: str, hashed: str) -> bool:
     return hashlib.sha256((salt + password).encode()).hexdigest() == h
 
 
+_db_init_lock = __import__("threading").Lock()
+
 def init_db():
+    if not _db_init_lock.acquire(blocking=False):
+        logger.info("DB init skipped (already in progress)")
+        return
+    try:
+        for attempt in range(5):
+            try:
+                _do_init_db()
+                return
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e) and attempt < 4:
+                    __import__("time").sleep(0.5 * (attempt + 1))
+                    continue
+                raise
+    finally:
+        _db_init_lock.release()
+
+
+def _do_init_db():
     conn = _get_conn()
     try:
         conn.executescript("""

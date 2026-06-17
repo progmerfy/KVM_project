@@ -148,12 +148,23 @@ def index():
     return HTMLResponse(content=_APP_HTML)
 
 
+@app.get("/favicon.svg")
+def favicon():
+    path = os.path.join(os.path.dirname(__file__), "..", "frontend-dist", "favicon.svg")
+    if os.path.exists(path):
+        from fastapi.responses import FileResponse
+        return FileResponse(path, media_type="image/svg+xml")
+    from fastapi.responses import Response
+    return Response(status_code=404)
+
+
 _APP_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>KVM Manager</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>

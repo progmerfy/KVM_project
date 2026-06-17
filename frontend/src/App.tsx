@@ -13,6 +13,12 @@ interface Toast { id: number; message: string; type?: 'success' | 'error' | 'inf
 
 let toastSeq = 0;
 
+const TOAST_COLORS: Record<string, string> = {
+  success: '#22c55e',
+  error: '#ef4444',
+  info: '#60a5fa',
+};
+
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard');
   const [selectedVM, setSelectedVM] = useState<string | null>(null);
@@ -74,17 +80,15 @@ export default function App() {
     <Layout page={page} user={user} onNavigate={navigate} onLogout={handleLogout} onAction={handleAction}>
       {renderPage()}
       {toasts.length > 0 && (
-        <div style={{
-          position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 1000, display: 'flex', flexDirection: 'column', gap: 8, pointerEvents: 'none',
-        }}>
+        <div className="toast-container">
           {toasts.map(t => (
-            <div key={t.id} style={{
-              background: '#1a1a2e', color: '#e4e4e7', padding: '10px 20px',
-              borderRadius: 8, fontSize: 13, border: '1px solid #1e1e32',
-              ...(t.type === 'error' ? { borderColor: '#ef4444', color: '#ef4444' } : {}),
-              ...(t.type === 'success' ? { borderColor: '#22c55e', color: '#22c55e' } : {}),
+            <div key={t.id} className="toast" style={{
+              borderColor: TOAST_COLORS[t.type || 'info'],
+              color: TOAST_COLORS[t.type || 'info'],
             }}>
+              <span className="toast-icon">
+                {t.type === 'success' ? '✓' : t.type === 'error' ? '✕' : 'ℹ'}
+              </span>
               {t.message}
             </div>
           ))}
