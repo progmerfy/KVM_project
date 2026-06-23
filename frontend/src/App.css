@@ -128,6 +128,10 @@ body {
   border-radius: 12px; padding: 20px;
 }
 .dash-section h3 { font-size: 13px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.dash-section .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+.dash-section .row:last-child { border-bottom: none; }
+.dash-section .row .label { color: var(--text2); }
+.dash-section .row .value { font-weight: 500; }
 
 .activity-list { display: flex; flex-direction: column; gap: 6px; }
 .activity-item {

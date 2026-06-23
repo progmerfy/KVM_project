@@ -1528,6 +1528,10 @@ assets_dir = os.path.join(static_dir, "assets")
 if os.path.isdir(assets_dir):
     app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
+logos_dir = os.path.join(static_dir, "logos")
+if os.path.isdir(logos_dir):
+    app.mount("/logos", StaticFiles(directory=logos_dir), name="logos")
+
 novnc_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(novnc_dir):
     app.mount("/static", StaticFiles(directory=novnc_dir), name="static")

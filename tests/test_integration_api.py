@@ -673,7 +673,7 @@ def test_network_create_list_delete(monkeypatch):
 def test_auth_login():
     resp = client.post(
         "/auth/login",
-        json={"username": "admin", "password": "admin"},
+        json={"username": "admin", "password": "admin1234"},
     )
     assert resp.status_code == 200
     assert "access_token" in resp.json()
@@ -690,7 +690,7 @@ def test_auth_login_wrong():
 def test_auth_secured_endpoint():
     resp = client.post(
         "/auth/login",
-        json={"username": "admin", "password": "admin"},
+        json={"username": "admin", "password": "admin1234"},
     )
     token = resp.json()["access_token"]
 

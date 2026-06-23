@@ -46,6 +46,35 @@ def api_download_repo_iso(name: str):
     return {"status": "ok", "image": img.model_dump()}
 
 
+@router.get("/usage")
+def api_image_usage():
+    from app.services.vm_manager import list_vms
+    import libvirt
+    from app.infrastructure import libvirt_driver
+    from app.config import settings
+
+    image_dir = _get_image_dir()
+    vms = list_vms()
+    result = {}
+    for vm in vms:
+        try:
+            conn = libvirt_driver.connect(settings.default_host_uri)
+            dom = conn.lookupByName(vm["name"])
+            xml = dom.XMLDesc(0)
+            import re
+            disks = re.findall(r"<source file='([^']+)'", xml)
+            libvirt_driver.close(conn)
+        except Exception:
+            disks = []
+        for dpath in disks:
+            if dpath.startswith(image_dir):
+                fname = os.path.basename(dpath)
+                if fname not in result:
+                    result[fname] = []
+                result[fname].append(vm["name"])
+    return {"status": "ok", "usage": result}
+
+
 @router.get("/{name}")
 def api_get_image(name: str):
     img = image_manager.get_image(name)
@@ -145,3 +174,6 @@ def api_storage_info():
         raise ServiceError(
             f"failed to get storage info: {e}", code="STORAGE_ERROR", http_status=500
         )
+
+
+

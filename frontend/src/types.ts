@@ -32,7 +32,7 @@ export interface BackupSchedule { id: number; vm_name: string; cron_expression: 
 
 export interface AuditLog { id: number; user_id?: number; username: string; action: string; resource_type: string; resource_name?: string; details?: string; ip_address?: string; success: boolean; created_at: string; }
 
-export interface Image { name: string; path?: string; format?: string; actual_size_bytes?: number; virtual_size_gb?: number; }
+export interface Image { name: string; path?: string; format?: string; actual_size_bytes?: number; virtual_size_gb?: number; mtime?: number; ctime?: number; }
 
 export interface RepoImage { name: string; description: string; url?: string; type?: string; is_iso?: boolean; }
 export interface RepoFamilies { [family: string]: RepoImage[]; }

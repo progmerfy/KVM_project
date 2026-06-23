@@ -13,18 +13,18 @@ logger = logging.getLogger(__name__)
 SUPPORTED_EXTENSIONS = {".qcow2", ".img", ".iso", ".raw"}
 ISO_REPO = {
     "ubuntu-24.04-server": {
-        "url": "https://releases.ubuntu.com/24.04/ubuntu-24.04.1-live-server-amd64.iso",
-        "description": "Ubuntu Server 24.04 LTS ISO",
+        "url": "https://releases.ubuntu.com/24.04/ubuntu-24.04.4-live-server-amd64.iso",
+        "description": "Ubuntu Server 24.04.4 LTS ISO",
         "family": "debian",
     },
     "ubuntu-22.04-server": {
         "url": "https://releases.ubuntu.com/22.04/ubuntu-22.04.5-live-server-amd64.iso",
-        "description": "Ubuntu Server 22.04 LTS ISO",
+        "description": "Ubuntu Server 22.04.5 LTS ISO",
         "family": "debian",
     },
-    "debian-12-netinst": {
-        "url": "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.10.0-amd64-netinst.iso",
-        "description": "Debian 12 Bookworm Net Install ISO",
+    "debian-13-netinst": {
+        "url": "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-13.5.0-amd64-netinst.iso",
+        "description": "Debian 13 Trixie Net Install ISO",
         "family": "debian",
     },
     "fedora-41-server": {
@@ -33,14 +33,54 @@ ISO_REPO = {
         "family": "rhel",
     },
     "centos-stream-9-iso": {
-        "url": "https://mirror.bytemark.co.uk/centos-stream/9-stream/BaseOS/x86_64/iso/CentOS-Stream-9-latest-x86_64-dvd1.iso",
+        "url": "https://mirror.rackspace.com/centos-stream/9-stream/BaseOS/x86_64/iso/CentOS-Stream-9-latest-x86_64-dvd1.iso",
         "description": "CentOS Stream 9 DVD ISO",
         "family": "rhel",
     },
     "rocky-9-iso": {
-        "url": "https://dl.rockylinux.org/pub/rocky/9/isos/x86_64/Rocky-9.5-x86_64-minimal.iso",
+        "url": "https://dl.rockylinux.org/pub/rocky/9/isos/x86_64/Rocky-9-latest-x86_64-minimal.iso",
         "description": "Rocky Linux 9 Minimal ISO",
         "family": "rhel",
+    },
+    "freebsd-14.4-iso": {
+        "url": "https://download.freebsd.org/releases/ISO-IMAGES/14.4/FreeBSD-14.4-RELEASE-amd64-disc1.iso",
+        "description": "FreeBSD 14.4-RELEASE amd64",
+        "family": "freebsd",
+    },
+    "freebsd-13.5-iso": {
+        "url": "https://download.freebsd.org/releases/ISO-IMAGES/13.5/FreeBSD-13.5-RELEASE-amd64-disc1.iso",
+        "description": "FreeBSD 13.5-RELEASE amd64",
+        "family": "freebsd",
+    },
+    "opensuse-leap-15.6-iso": {
+        "url": "https://download.opensuse.org/distribution/leap/15.6/iso/openSUSE-Leap-15.6-DVD-x86_64-Current.iso",
+        "description": "openSUSE Leap 15.6 DVD",
+        "family": "suse",
+    },
+    "opensuse-tumbleweed-iso": {
+        "url": "https://download.opensuse.org/tumbleweed/iso/openSUSE-Tumbleweed-DVD-x86_64-Current.iso",
+        "description": "openSUSE Tumbleweed DVD",
+        "family": "suse",
+    },
+    "alpine-3.20-iso": {
+        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/alpine-standard-3.20.3-x86_64.iso",
+        "description": "Alpine Linux 3.20 Standard",
+        "family": "alpine",
+    },
+    "astra-orel-2.12": {
+        "url": "https://download.astralinux.ru/astra/stable/orel/iso/orel-current.iso",
+        "description": "Astra Linux Common Edition (Orel) 2.12 — ALCE",
+        "family": "astra",
+    },
+    "redos-8.0": {
+        "url": "https://files.red-soft.ru/redos/8.0/x86_64/iso/redos-8-20250711.4-Everything-x86_64-DVD1.iso",
+        "description": "RED OS 8.0 x86_64 (Server/Workstation)",
+        "family": "redos",
+    },
+    "redos-7.3": {
+        "url": "https://files.red-soft.ru/redos/7.3/x86_64/iso/redos-MUROM-7.3.6-20250715.0-Everything-x86_64-DVD1.iso",
+        "description": "RED OS 7.3 MUROM x86_64",
+        "family": "redos",
     },
 }
 
@@ -115,6 +155,31 @@ CLOUD_IMAGES = {
         "description": "Arch Linux Cloud",
         "family": "arch",
     },
+    "freebsd-14.1": {
+        "url": "https://download.freebsd.org/releases/VM-IMAGES/14.1-RELEASE/amd64/Latest/FreeBSD-14.1-RELEASE-amd64.zfs.qcow2",
+        "description": "FreeBSD 14.1-RELEASE ZFS",
+        "family": "freebsd",
+    },
+    "freebsd-13.4": {
+        "url": "https://download.freebsd.org/releases/VM-IMAGES/13.4-RELEASE/amd64/Latest/FreeBSD-13.4-RELEASE-amd64.qcow2",
+        "description": "FreeBSD 13.4-RELEASE UFS",
+        "family": "freebsd",
+    },
+    "opensuse-leap-15.6": {
+        "url": "https://download.opensuse.org/repositories/cloud:/images:/openSUSE-Leap/images/openSUSE-Leap-15.6-SLES.x86_64-NoCloud.qcow2",
+        "description": "openSUSE Leap 15.6 NoCloud",
+        "family": "suse",
+    },
+    "opensuse-tumbleweed": {
+        "url": "https://download.opensuse.org/repositories/cloud:/images:/openSUSE-Tumbleweed/images/openSUSE-Tumbleweed-NoCloud.x86_64.qcow2",
+        "description": "openSUSE Tumbleweed NoCloud",
+        "family": "suse",
+    },
+    "alpine-3.20": {
+        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/alpine-virt-3.20.3-x86_64.qcow2",
+        "description": "Alpine Linux 3.20 virt",
+        "family": "alpine",
+    },
 }
 
 
@@ -172,10 +237,13 @@ def download_cloud_image(name: str) -> ImageInfo:
     dest = os.path.join(image_dir, filename)
 
     if os.path.isfile(dest):
-        logger.info("Cloud image already exists: %s", dest)
         info = _get_image_info(dest)
         if info:
+            logger.info("Cloud image already exists: %s", dest)
             return info
+        else:
+            logger.warning("Removing stale 0-byte cloud image: %s", dest)
+            os.remove(dest)
 
     logger.info("Downloading cloud image %s from %s", name, ci["url"])
     try:
@@ -215,10 +283,13 @@ def download_repo_iso(name: str) -> ImageInfo:
     dest = os.path.join(image_dir, filename)
 
     if os.path.isfile(dest):
-        logger.info("ISO already exists: %s", dest)
         info = _get_image_info(dest)
         if info:
+            logger.info("ISO already exists: %s", dest)
             return info
+        else:
+            logger.warning("Removing stale 0-byte ISO: %s", dest)
+            os.remove(dest)
 
     logger.info("Downloading repo ISO %s from %s", name, ri["url"])
     try:
@@ -251,13 +322,16 @@ def _get_image_info(fpath: str) -> Optional[ImageInfo]:
             stderr=subprocess.DEVNULL,
         )
         data = json.loads(output)
+        st = os.stat(fpath)
         return ImageInfo(
             name=os.path.basename(fpath),
             path=fpath,
             format=data.get("format", "unknown"),
             virtual_size_gb=round(data.get("virtual-size", 0) / (1024**3), 2),
-            actual_size_bytes=os.path.getsize(fpath),
+            actual_size_bytes=st.st_size,
             backing_file=data.get("backing-filename"),
+            mtime=st.st_mtime,
+            ctime=st.st_ctime,
         )
     except Exception as e:
         logger.warning("Failed to get image info for %s: %s", fpath, e)

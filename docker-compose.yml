@@ -16,6 +16,8 @@ services:
       - "8443:8443"
     environment:
       - DEFAULT_HOST_URI=qemu:///system
+      - JWT_SECRET_KEY=kvm-manager-secret-key-change-in-production-2024
+      - API_PASSWORD=admin1234
       - SSL_KEY_FILE=/app/certs/kvm-mgr.key
       - SSL_CERT_FILE=/app/certs/kvm-mgr.crt
     command: >

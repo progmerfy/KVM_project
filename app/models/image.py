@@ -9,6 +9,8 @@ class ImageInfo(BaseModel):
     virtual_size_gb: float
     actual_size_bytes: int
     backing_file: Optional[str] = None
+    mtime: Optional[float] = None
+    ctime: Optional[float] = None
 
 
 class CloudImageInfo(BaseModel):

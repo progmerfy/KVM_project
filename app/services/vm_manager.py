@@ -10,7 +10,7 @@ from app.api.schemas import VMCreateRequest, VMActionRequest, VMISORequest, VMRe
 from app.infrastructure import libvirt_driver, storage, network
 from app.errors import ServiceError
 from app.models.vm_spec import VMSpec
-from app.database import set_vm_owner, delete_vm_ownership, list_vms_for_user, get_vm_owner
+from app.database import set_vm_owner, delete_vm_ownership, list_vms_for_user, get_vm_owner, get_vm_root_password
 from app.config import settings
 from app.services import cloud_init
 
@@ -347,7 +347,7 @@ def get_vm_info(name: str, host_uri: str = None) -> Optional[dict]:
                 result["vnc_port"] = int(vnc.group(1))
 
         # Add stored root password if exists
-        pw = database.get_vm_root_password(name)
+        pw = get_vm_root_password(name)
         if pw:
             result["root_password"] = pw
 
@@ -898,11 +898,8 @@ def _render_domain_xml(spec: VMSpec) -> str:
     </console>"""
 
     os_section = """<os>
-    <type arch='x86_64'>hvm</type>"""
-
-    if spec.iso_path:
-        os_section += "\n    <boot dev='cdrom'/>"
-    os_section += "\n  </os>"
+    <type arch='x86_64'>hvm</type>
+  </os>"""
 
     max_memory = max(memory * 2, 65536)  # allow double or 64GB max for hotplug
     max_vcpus = max(vcpu * 4, 32)  # allow 4x or 32 max for hotplug

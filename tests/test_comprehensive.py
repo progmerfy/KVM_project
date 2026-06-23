@@ -65,7 +65,7 @@ def test_auth_verify():
     try:
         # /auth/verify uses Depends(require_auth) — not overridden by conftest
         # We need a real token
-        resp = client.post("/auth/login", json={"username": "admin", "password": "admin"})
+        resp = client.post("/auth/login", json={"username": "admin", "password": "admin1234"})
         assert resp.status_code == 200
         token = resp.json()["access_token"]
         resp = client.get("/auth/verify", headers={"Authorization": f"Bearer {token}"})
@@ -145,17 +145,19 @@ def test_auth_users_forbidden_non_admin():
 
 def test_auth_change_password():
     resp = client.post("/auth/change-password", json={
-        "current_password": "admin",
+        "current_password": "admin1234",
         "new_password": "admin12345",
     })
     assert resp.status_code == 200
-    # revert
+    # revert to original password
     resp = client.post("/auth/change-password", json={
         "current_password": "admin12345",
-        "new_password": "admin",
+        "new_password": "admin1234",
     })
-    # "admin" is only 5 chars; min_length=8 → 422
-    assert resp.status_code == 422
+    assert resp.status_code == 200
+    # verify old password no longer works
+    resp = client.post("/auth/login", json={"username": "admin", "password": "admin12345"})
+    assert resp.status_code == 401
 
 
 def test_auth_change_password_wrong():

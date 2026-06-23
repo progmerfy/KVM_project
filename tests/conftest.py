@@ -1,9 +1,13 @@
 import os
+import sys
 import tempfile
+
+# Make the libvirt stub importable before any app code runs
+sys.path.insert(0, os.path.dirname(__file__))
 
 os.environ["DB_PATH"] = tempfile.mktemp(suffix=".db")
 os.environ["API_USERNAME"] = "admin"
-os.environ["API_PASSWORD"] = "admin"
+os.environ["API_PASSWORD"] = "admin1234"
 
 from app.database import init_db
 from app.main import app
